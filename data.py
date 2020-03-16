@@ -1,0 +1,31 @@
+import json
+
+class Joint:
+
+    def __init__(self, x, y, visible):
+        self.x = x
+        self.y = y
+        self.is_visible = visible
+
+
+class HumanPose:
+    r_ankle = 0
+    r_knee = 1
+    r_hip = 2
+    l_hip = 3
+    l_knee = 4
+    l_ankle = 5
+    pelvis = 6
+    thorax = 7
+    upper_neck = 8
+    head_top = 9
+    r_wrist = 10
+    r_elbow = 11
+    r_shoulder = 12
+    l_shoulder = 13
+    l_elbow = 14
+    l_wrist = 15
+
+    def __init__(self, joints):
+        self.joints = joints
+
