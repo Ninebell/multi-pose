@@ -1,8 +1,6 @@
 from GDI.model.base import BaseModel
 import tensorflow as tf
 from keras.utils import plot_model
-from keras.applications import ResNet50
-import matplotlib.pyplot as plt
 from keras.optimizers import RMSprop
 import math
 import os
@@ -14,6 +12,10 @@ from keras.layers import Conv2D, Flatten, Dense, BatchNormalization, Add, MaxPoo
 import keras.backend  as K
 from keras.models import Model
 from keras.optimizers import Adam
+from keras.layers import Conv2D, Flatten, Dense, BatchNormalization, Add, MaxPooling2D, UpSampling2D, concatenate, ReLU, Layer, Input, LeakyReLU
+import keras.backend as K
+
+import tensorflow as tf
 from PIL import Image
 
 
@@ -181,6 +183,28 @@ def data_generator(name_list, batch_size, shuffle=True):
         yield x, y
 
 
+def focal_loss(y_true, y_pred):
+
+    alpha = 2
+    beta = 4
+    epsilon = K.epsilon()
+
+    y_true = (y_true + 1)/2.0
+    y_pred = (y_pred + 1)/2.0
+    N = tf.reduce_sum(tf.where(tf.equal(y_true,1), y_true, tf.ones_like(y_true)))
+    y_pred_1 = tf.where(tf.equal(y_true, 1), y_pred, tf.ones_like(y_pred))
+    y_pred_0 = tf.where(tf.not_equal(y_true, 1), y_pred, tf.ones_like(y_pred))
+    y_true_0 = tf.where(tf.not_equal(y_true, 1), y_true, tf.ones_like(y_true))
+
+    y_pred_0 = K.clip(y_pred_0, epsilon, 1.-epsilon)
+    y_pred_1 = K.clip(y_pred_1, epsilon, 1.-epsilon)
+    y_true_0 = K.clip(y_true_0, epsilon, 1.-epsilon)
+
+    y_pred_1 = tf.pow((1-y_pred_1), alpha) * tf.log(y_pred_1)
+    y_pred_0 = tf.pow((1-y_true_0), beta) * tf.pow(y_pred_0,alpha) * tf.log(1-y_pred_0)
+    y_pred_sum = tf.reduce_sum(y_pred_1 + y_pred_0)
+    return -y_pred_sum / N
+
 def save_limb(values, path):
     limb_gt = values[:,:,0]
     for k in range(1, 16):
@@ -299,49 +323,48 @@ def focal_loss(y_true, y_pred):
 
 
 if __name__ == "__main__":
-    # train, test = create_train_test_set(0.2)
+    data_set_path = "dataset/mpii/result_focal"
+    os.makedirs(data_set_path, exist_ok=True)
+
     train, test = load_train_test_set()
     length = 22400
     t = MultiPose(input_shape=(256,256,3), hournum=2)
-    # plot_model(t.model, to_file='model.png')
-    # optimzer = RMSprop(lr=2.5e-4)
-    optimzer = Adam()
-    t.compile(optimizer=optimzer, loss='mae', metrics=['mae'])
+    plot_model(t.model, to_file='model.png')
+    optimzer = RMSprop(lr=2.5e-4)
+    t.compile(optimizer=optimzer, loss=focal_loss, metrics=['mae'])
     # t.summary()
-    # t.model.load_weights('dataset/mpii/result_paper/76/model.h5')
+    # t.model.load_weights('dataset/mpii/result_paper/116/model.h5')
     # t.compile(optimizer='adam', loss=['mse','mse'], metrics=['mae'])
     epoch = 1
-
     while True:
-        os.makedirs('dataset/mpii/result_paper/{0}'.format(epoch),exist_ok=True)
+
+        os.makedirs('{1}/{0}'.format(epoch,data_set_path),exist_ok=True)
 
         for idx, value in enumerate(data_generator(train, 4)):
             print('epoch:', epoch, 'iter: ', idx, t.model.train_on_batch(x=value[0], y=value[1]))
 
-        t.model.save('dataset/mpii/result_paper/{0}/model.h5'.format(epoch))
-        for idx, value in enumerate(data_generator(test, 1, shuffle=False)):
-            save_heatmap(value[1][0][0], 'dataset/mpii/result_paper/{0}/heatmap_gt_{1}.png'.format(epoch, idx))
-            save_limb(value[1][1][0], 'dataset/mpii/result_paper/{0}/limb_gt_{1}.png'.format(epoch, idx))
+        t.model.save('{1}/{0}/model.h5'.format(epoch, data_set_path))
+        for idx, value in enumerate(data_generator(10, 1, length-10, shuffle=False)):
+            save_heatmap(value[1][0][0], '{2}/{0}/heatmap_gt_{1}.png'.format(epoch, idx, data_set_path))
+            save_limb(value[1][1][0], '{2}/{0}/limb_gt_{1}.png'.format(epoch, idx, data_set_path))
 
             result = t.model.predict(value[0])
-            save_heatmap(result[0][0], 'dataset/mpii/result_paper/{0}/base_heatmap_{1}.png'.format(epoch, idx))
-            save_limb(result[1][0], 'dataset/mpii/result_paper/{0}/base_limb{1}.png'.format(epoch, idx))
+            save_heatmap(result[0][0], '{2}/{0}/base_heatmap_{1}.png'.format(epoch, idx, data_set_path))
+            save_limb(result[1][0], '{2}/{0}/base_limb{1}.png'.format(epoch, idx, data_set_path))
 
-            save_heatmap(result[2][0], 'dataset/mpii/result_paper/{0}/heatmap_{1}.png'.format(epoch, idx))
-            save_limb(result[3][0], 'dataset/mpii/result_paper/{0}/limb_{1}.png'.format(epoch, idx))
-            if idx>10:
-                break
+            save_heatmap(result[2][0], '{2}/{0}/heatmap_{1}.png'.format(epoch, idx, data_set_path))
+            save_limb(result[3][0], '{2}/{0}/limb_{1}.png'.format(epoch, idx, data_set_path))
 
-        # for idx, value in enumerate(data_generator(train, 1, shuffle=False)):
-        #     save_heatmap(value[1][0][0], 'dataset/mpii/result_paper/{0}/tr_heatmap_gt_{1}.png'.format(epoch, idx))
-        #     save_limb(value[1][1][0], 'dataset/mpii/result_paper/{0}/tr_limb_gt_{1}.png'.format(epoch, idx))
-        #
-        #     result = t.model.predict(value[0])
-        #     save_heatmap(result[0][0], 'dataset/mpii/result_paper/{0}/tr_base_heatmap_{1}.png'.format(epoch, idx))
-        #     save_limb(result[1][0], 'dataset/mpii/result_paper/{0}/tr_base_limb{1}.png'.format(epoch, idx))
-        #
-        #     save_heatmap(result[2][0], 'dataset/mpii/result_paper/{0}/tr_heatmap_{1}.png'.format(epoch, idx))
-        #     save_limb(result[3][0], 'dataset/mpii/result_paper/{0}/tr_limb_{1}.png'.format(epoch, idx))
+        for idx, value in enumerate(data_generator(10, 1)):
+            save_heatmap(value[1][0][0], '{2}/{0}/tr_heatmap_gt_{1}.png'.format(epoch, idx, data_set_path))
+            save_limb(value[1][1][0], '{2}/{0}/tr_limb_gt_{1}.png'.format(epoch, idx, data_set_path))
+
+            result = t.model.predict(value[0])
+            save_heatmap(result[0][0], '{2}/{0}/tr_base_heatmap_{1}.png'.format(epoch, idx, data_set_path))
+            save_limb(result[1][0], '{2}/{0}/tr_base_limb{1}.png'.format(epoch, idx, data_set_path))
+
+            save_heatmap(result[2][0], '{2}/{0}/tr_heatmap_{1}.png'.format(epoch, idx, data_set_path))
+            save_limb(result[3][0], '{2}/{0}/tr_limb_{1}.png'.format(epoch, idx, data_set_path))
 
         epoch = epoch+1
         # BinaryCrossentropy()
