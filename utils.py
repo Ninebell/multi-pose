@@ -19,6 +19,14 @@ base_shape = (64,64,1)
 base_shape_2 = (64,64,2)
 base_shape_3 = (64,64,3)
 
+
+def decode(image):
+    return np.asarray(image * 255, dtype=np.uint8)
+
+def encode(image):
+    return np.asarray(image, dtype=np.float)/255.
+
+
 def save_joints():
     joint_data_fn = 'dataset/mpii/data.json'
     mat = loadmat('dataset/mpii/mpii_human_pose_v1_u12_1.mat')
@@ -128,16 +136,13 @@ def split_train_test():
 
 def create_kernel(shape, point, radius=kernel_size):
     base = np.zeros(shape)
-    kernel = np.zeros((radius,radius))
 
     x = math.ceil(point[0])
     y = math.ceil(point[1])
 
-    for r in range(radius):
-        for c in range(radius):
-            kernel[r, c] = np.exp(-1/2*((radius//2-c)**2+(radius//2-r)**2))
-            if 0 <= x+c-radius//2 < shape[1] and 0 <= y+r-radius//2 < shape[0]:
-                base[y+r-radius//2, x+c-radius//2] = kernel[r, c]
+    for r in range(shape[0]):
+        for c in range(shape[1]):
+            base[r, c] = np.exp(-((r-y)**2+(c-x)**2)/radius)
 
     return base
 
@@ -208,7 +213,7 @@ def center_point(points):
     return (np.mean(points[:,0]),np.mean(points[:,1]))
 
 
-def draw_limb(idx, points):
+def draw_limb(idx, points, radius):
     src = points[idx]
     # dst = points[parent_point(idx)]
     dst = center_point(points)
@@ -240,23 +245,23 @@ def draw_limb(idx, points):
                 y2 = math.ceil((x+1)*alpha+bias)
                 for y in range(y1, y2+1):
                     if (y < src_y or y < dst_y) and (y >= src_y or y >= dst_y):
-                        base_map = np.maximum(base_map, create_kernel(base_shape, (x, y), 3))
+                        base_map = np.maximum(base_map, create_kernel(base_shape, (x, y), radius))
             elif alpha == 0:
-                base_map = np.maximum(base_map, create_kernel(base_shape, (x, src[1]), 3))
+                base_map = np.maximum(base_map, create_kernel(base_shape, (x, src[1]), radius))
 
             else:
                 y1 = math.ceil((x+1) * alpha + bias)
                 y2 = math.ceil(x * alpha + bias)
                 for y in range(y1,y2+1):
                     if (y < src_y or y < dst_y) and (y >= src_y or y >= dst_y):
-                        base_map = np.maximum(base_map, create_kernel(base_shape, (x, y), 3))
+                        base_map = np.maximum(base_map, create_kernel(base_shape, (x, y), radius))
     else:
         if src_y<dst_y:
             for y in range(src_y, dst_y+1):
-                base_map = np.maximum(base_map, create_kernel(base_shape, (src[0], y), 3))
+                base_map = np.maximum(base_map, create_kernel(base_shape, (src[0], y), radius))
         else:
             for y in range(dst_y, src_y+1):
-                base_map = np.maximum(base_map, create_kernel(base_shape, (src[0], y), 3))
+                base_map = np.maximum(base_map, create_kernel(base_shape, (src[0], y), radius))
 
     return base_map
 
@@ -267,7 +272,9 @@ def save_image_total(limbs, index):
     for i in range(0,16):
         base = np.maximum(base, limbs[i,:,:])
 
-    image = np.asarray(base * 255, dtype=np.uint8)
+
+    image = decode(base)
+    # image = np.asarray(base * 255, dtype=np.uint8)
     image = Image.fromarray(image)
     image.save('dataset/mpii/center_limb/16/{0}.png'.format(index))
 
@@ -275,14 +282,16 @@ def save_image_total(limbs, index):
 def save_images(confidences, limbs, index):
     for idx in range(len(confidences)):
         os.makedirs('dataset/mpii/heatmap/{0}'.format(idx), exist_ok=True)
-        confidence = np.asarray(confidences[idx] * 255, dtype=np.uint8)
+        # confidence = np.asarray(confidences[idx] * 255, dtype=np.uint8)
+        confidence = decode(confidences[idx])
         confidence = np.reshape(confidence, (64, 64))
         image = Image.fromarray(confidence)
         image.save('dataset/mpii/heatmap/{0}/{1}.png'.format(idx,index))
 
         if idx != 16:
             os.makedirs('dataset/mpii/center_limb/{0}'.format(idx), exist_ok=True)
-            limb = np.asarray(limbs[idx] * 255, dtype=np.uint8)
+            limb = decode(limbs[idx])
+            # limb = np.asarray(limbs[idx] * 255, dtype=np.uint8)
             limb = np.reshape(limb, (64, 64))
 
             image = Image.fromarray(limb)
@@ -291,9 +300,9 @@ def save_images(confidences, limbs, index):
 
 def flop_image(confidences,limbs):
     confidences = np.asarray(confidences)
-    print(confidences.shape)
+    # print(confidences.shape)
     limbs = np.asarray(limbs)
-    print(limbs.shape)
+    # print(limbs.shape)
     c = np.zeros((17,64,64))
     l = np.zeros((16,64,64))
     for idx in range(0,17):
@@ -379,15 +388,19 @@ if __name__ == "__main__":
             points[:, 0] = points[:, 0] * 64 // width
             points[:, 1] = points[:, 1] * 64 // height
             limb_idx = 0
+            radius = 3 + np.log2((np.max(points[:,0]) - np.min(points[:,0])) * (np.max(points[:,1]) - np.min(points[:,1])))
+            # if radius < 3:
+            #     radius = 3
+            limb_radius = np.sqrt(radius)
 
             for idx, point in enumerate(points):
-                kernel = np.reshape(create_kernel(base_shape, (point[0], point[1]), radius=3), (64,64))
+                kernel = np.reshape(create_kernel(base_shape, (point[0], point[1]), radius=radius), (64,64))
                 confidences[idx] = np.maximum(confidences[idx], kernel)
                 # if idx != 9:
-                limbs[limb_idx] = np.maximum(limbs[limb_idx], np.reshape(draw_limb(idx,points), (64,64)))
+                limbs[limb_idx] = np.maximum(limbs[limb_idx], np.reshape(draw_limb(idx,points, limb_radius), (64,64)))
                 limb_idx = limb_idx + 1
 
-            kernel = np.reshape(create_kernel(base_shape, center_point(points), radius=3), (64, 64))
+            kernel = np.reshape(create_kernel(base_shape, center_point(points), radius=radius), (64, 64))
             confidences[-1] = np.maximum(confidences[-1], kernel)
 
         lines[idxes] = np.asarray(person).tolist()

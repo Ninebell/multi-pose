@@ -7,13 +7,16 @@ import numpy as np
 from keras.layers import Conv2D, Flatten, Dense, BatchNormalization, Add, MaxPooling2D, UpSampling2D, concatenate, ReLU, Layer, Input, LeakyReLU
 import keras.backend as K
 
+from utils import encode,decode
+
 import tensorflow as tf
 from PIL import Image
 
+from conf import data_path
+
 
 class MultiPose(BaseModel):
-    def __init__(self, input_shape, hournum, name="ModelA"):
-        self.__hournum = hournum
+    def __init__(self, input_shape, name="ModelA"):
         super().__init__(input_shape, name)
 
     def __bottleneck(self, input_layer, filters):
@@ -120,7 +123,9 @@ class MultiPose(BaseModel):
 
 def data_generator(data_length, batch_size, start=1, shuffle=True):
     def __load_image(path):
-        return (np.asarray(Image.open(path))/255. - 0.5) * 2
+        return encode(Image.open(path))
+
+        # return (np.asarray(Image.open(path))/255.)
 
     idxes = np.arange(data_length)+start
     if shuffle:
@@ -185,8 +190,8 @@ def focal_loss(y_true, y_pred):
     y_pred = (y_pred + 1)/2.0
     N = tf.reduce_sum(tf.where(tf.equal(y_true,1), y_true, tf.ones_like(y_true)))
     y_pred_1 = tf.where(tf.equal(y_true, 1), y_pred, tf.ones_like(y_pred))
-    y_pred_0 = tf.where(tf.not_equal(y_true, 1), y_pred, tf.ones_like(y_pred))
-    y_true_0 = tf.where(tf.not_equal(y_true, 1), y_true, tf.ones_like(y_true))
+    y_pred_0 = tf.where(tf.not_equal(y_true, 1), y_pred, tf.zeros_like(y_pred))
+    y_true_0 = tf.where(tf.not_equal(y_true, 1), y_true, tf.zeros_like(y_true))
 
     y_pred_0 = K.clip(y_pred_0, epsilon, 1.-epsilon)
     y_pred_1 = K.clip(y_pred_1, epsilon, 1.-epsilon)
@@ -201,7 +206,8 @@ def save_limb(values, path):
     limb_gt = values[:,:,0]
     for k in range(1, 16):
         limb_gt = np.maximum(np.reshape(values[:, :, k], (64,64)), limb_gt)
-    limb_gt = np.asarray(((limb_gt+1) * 127.5), dtype=np.uint8)
+    limb_gt = decode(limb_gt)
+    # limb_gt = np.asarray(((limb_gt+1) * 127.5), dtype=np.uint8)
     limb_gt = np.reshape(limb_gt, (64, 64))
     image = Image.fromarray(limb_gt)
     image.save(path)
@@ -211,13 +217,15 @@ def save_heatmap(values, path):
     gt = values[:,:,0]
     for k in range(1, 17):
         gt = np.maximum(np.reshape(values[ :, :, k], (64, 64)), gt)
-    gt = np.asarray(((gt+1) * 125.), dtype=np.uint8)
+    gt = decode(gt)
+    # gt = np.asarray(((gt+1) * 125.), dtype=np.uint8)
     gt = np.reshape(gt, (64, 64))
     image = Image.fromarray(gt)
     image.save(path)
 
 
 if __name__ == "__main__":
+
 
     data_set_path = "dataset/mpii/result_focal"
     os.makedirs(data_set_path, exist_ok=True)
@@ -228,11 +236,10 @@ if __name__ == "__main__":
     optimzer = RMSprop(lr=2.5e-4)
     t.compile(optimizer=optimzer, loss=focal_loss, metrics=['mae'])
     # t.summary()
-    # t.model.load_weights('dataset/mpii/result_paper/116/model.h5')
+    t.model.load_weights('{0}/129/model.h5'.format(data_set_path))
     # t.compile(optimizer='adam', loss=['mse','mse'], metrics=['mae'])
     epoch = 1
     while True:
-
         os.makedirs('{1}/{0}'.format(epoch,data_set_path),exist_ok=True)
 
         for idx, value in enumerate(data_generator(length, 8)):
