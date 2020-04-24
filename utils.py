@@ -267,6 +267,7 @@ def draw_limb(idx, points, radius):
 
 
 def save_image_total(limbs, index):
+    os.makedirs('dataset/mpii/center_limb/16', exist_ok=True)
     base = np.zeros((64,64))
     limbs = np.asarray(limbs)
     for i in range(0,16):
@@ -362,7 +363,6 @@ def flop_points(points):
     return reverse_points
 
 if __name__ == "__main__":
-
     # save_joints()
     # split_train_test()
 
@@ -371,9 +371,14 @@ if __name__ == "__main__":
     idxes = 1
 
     lines = {}
+    os.makedirs('dataset/mpii/input', exist_ok=True)
+    os.makedirs('dataset/mpii/heatmap', exist_ok=True)
+    os.makedirs('dataset/mpii/center_limb', exist_ok=True)
 
     for image_path, person in tqdm.tqdm(zip(x, y)):
         image = Image.open(image_path)
+        idxes = image_path.split('/')[-1].split('.')[0]+"0"
+        # print(idxes)
 
         confidences = [np.zeros((64,64))for i in range(17)]
         limbs = [np.zeros((64,64))for i in range(16)]
@@ -403,14 +408,15 @@ if __name__ == "__main__":
             kernel = np.reshape(create_kernel(base_shape, center_point(points), radius=radius), (64, 64))
             confidences[-1] = np.maximum(confidences[-1], kernel)
 
-        lines[idxes] = np.asarray(person).tolist()
+        # lines[idxes] = np.asarray(person).tolist()
 
         image = image.resize((256,256))
         image.save('dataset/mpii/input/{0}.png'.format(idxes))
 
         save_images(confidences,limbs,idxes)
         save_image_total(limbs,idxes)
-        idxes = idxes + 1
+        idxes = image_path.split('/')[-1].split('.')[0]+"1"
+        # idxes[-1] = "1"
 
         image = np.array(image)
         image = cv2.flip(image, 1)
@@ -420,7 +426,7 @@ if __name__ == "__main__":
         confidences, limbs = flop_image(confidences, limbs)
         save_images(confidences, limbs, idxes)
         save_image_total(limbs,idxes)
-        idxes = idxes + 1
+        # idxes = idxes + 1
 
 
         # os.makedirs('dataset/mpii/center_limb/{0}'.format(idxes*2), exist_ok=True)
@@ -448,7 +454,6 @@ if __name__ == "__main__":
         #
         #     image = Image.fromarray(limb)
         #     image.save('dataset/mpii/center_limb/{0}/{1}.png'.format(idx, idxes))
-
 
     save_mpii_joints(lines)
     input()

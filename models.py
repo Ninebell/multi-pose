@@ -1,9 +1,17 @@
 from GDI.model.base import BaseModel
+import tensorflow as tf
 from keras.utils import plot_model
 from keras.optimizers import RMSprop
 import math
 import os
 import numpy as np
+from GDI.utils.generator import BaseGenerator
+from keras.initializers import he_normal
+from keras.losses import BinaryCrossentropy
+from keras.layers import Conv2D, Flatten, Dense, BatchNormalization, Add, MaxPooling2D, UpSampling2D, concatenate, ReLU, Layer, Input, LeakyReLU
+import keras.backend  as K
+from keras.models import Model
+from keras.optimizers import Adam
 from keras.layers import Conv2D, Flatten, Dense, BatchNormalization, Add, MaxPooling2D, UpSampling2D, concatenate, ReLU, Layer, Input, LeakyReLU
 import keras.backend as K
 
@@ -121,25 +129,25 @@ class MultiPose(BaseModel):
         return output_layer
 
 
-def data_generator(data_length, batch_size, start=1, shuffle=True):
+def data_generator(name_list, batch_size, shuffle=True):
     def __load_image(path):
         return encode(Image.open(path))
 
         # return (np.asarray(Image.open(path))/255.)
 
-    idxes = np.arange(data_length)+start
+    idxes = np.arange(len(name_list))
     if shuffle:
         np.random.shuffle(idxes)
 
     root_path = 'dataset/mpii'
-    for j in range(math.ceil(data_length/batch_size)):
+    for j in range(math.ceil(len(name_list)/batch_size)):
         x = []
         cf_y = []
         cc_y = []
         for batch_idx in range(0, batch_size):
             y_temp = []
             idx = j*batch_size + batch_idx
-            idx = idxes[idx]
+            idx = name_list[idxes[idx]]
             x_image = __load_image(root_path+'/input/{0}.png'.format(idx))
             for i in range(0, 17):
                 y_temp.append(np.reshape(__load_image(root_path+'/heatmap/{0}/{1}.png'.format(i, idx)), (64,64,1)))
@@ -224,12 +232,108 @@ def save_heatmap(values, path):
     image.save(path)
 
 
+def create_train_test_set(ratio):
+    dataes = os.listdir('dataset/mpii/input')
+    indexes = np.arange(len(dataes))
+    np.random.shuffle(indexes)
+    test_len = int(len(indexes)*ratio)
+    train_len = len(indexes) - test_len
+
+    train = []
+    test = []
+    for i in range(test_len):
+        test.append(dataes[indexes[i]].split('/')[-1].split('.')[0])
+
+    for i in range(test_len, test_len + train_len):
+        train.append(dataes[indexes[i]].split('/')[-1].split('.')[0])
+
+    print(len(train), len(test))
+    with open('train_set.ini', 'w') as op:
+        for name in train:
+            op.write(name+'\n')
+
+    with open('test_set.ini', 'w') as op:
+        for name in test:
+            op.write(name+'\n')
+
+    return train, test
+
+
+def load_train_test_set():
+    op = open('train_set.ini', 'r')
+    train = []
+    train_line = op.readlines()
+    for line in train_line:
+        train.append(line[:-1])
+
+    op = open('test_set.ini', 'r')
+    test = []
+    test_line = op.readlines()
+    for line in test_line:
+        test.append(line[:-1])
+
+    return train, test
+
+
+# def focal_loss(gamma=2., alpha=.25):
+#     """
+#     Binary form of focal loss.
+#       FL(p_t) = -alpha * (1 - p_t)**gamma * log(p_t)
+#       where p = sigmoid(x), p_t = p or 1 - p depending on if the label is 1 or 0, respectively.
+#     References:
+#         https://arxiv.org/pdf/1708.02002.pdf
+#     Usage:
+#      model.compile(loss=[binary_focal_loss(alpha=.25, gamma=2)], metrics=["accuracy"], optimizer=adam)
+#     """
+#     def focal_loss_fixed(y_true, y_pred):
+#         """
+#         :param y_true: A tensor of the same shape as `y_pred`
+#         :param y_pred:  A tensor resulting from a sigmoid
+#         :return: Output tensor.
+#         """
+#
+#         pt_1 = tf.where(tf.equal(y_true, 1), y_pred, tf.ones_like(y_pred))
+#         pt_0 = tf.where(tf.not_equal(y_true, 1), y_pred, tf.ones_like(y_pred))
+#
+#         epsilon = K.epsilon()
+#         # clip to prevent NaN's and Inf's
+#         pt_1 = K.clip(pt_1, epsilon, 1. - epsilon)
+#         pt_0 = K.clip(pt_0, epsilon, 1. - epsilon)
+#
+#         return -K.sum(alpha * K.pow(1. - pt_1, gamma) * K.log(pt_1)) \
+#                -K.sum((1 - pt_0) * K.pow(pt_0, gamma) * K.log(1. - pt_0))
+#
+#     return focal_loss_fixed
+
+def focal_loss(y_true, y_pred):
+    epsilon = K.epsilon()
+
+    def one_value(b, yp, alpha):
+        return K.clip(-K.pow(b - b * yp, alpha) * K.log(b * yp), epsilon, 1.-epsilon)
+
+    def no_one_value(b, yt, yp, alpha, beta):
+        return K.clip(-K.pow(b - b * yt, beta) * K.pow(b * yp, alpha) * K.log(b - yp), epsilon, 1.-epsilon)
+
+    y_true = (y_true + 1) / 2.0
+    y_pred = (y_pred + 1) / 2.0 + epsilon
+
+    base = K.cast(K.equal(y_true, 1), dtype='float32')
+    no_one = (base - 1) * -1
+
+    alpha = 2
+    beta = 4
+
+    ones = one_value(base, y_pred, alpha)
+    no_ones = no_one_value(no_one, y_true, y_pred, alpha, beta)
+
+    return K.sum(ones + no_ones) / K.sum(base)
+
+
 if __name__ == "__main__":
-
-
     data_set_path = "dataset/mpii/result_focal"
     os.makedirs(data_set_path, exist_ok=True)
 
+    train, test = load_train_test_set()
     length = 22400
     t = MultiPose(input_shape=(256,256,3), hournum=2)
     plot_model(t.model, to_file='model.png')
@@ -242,7 +346,7 @@ if __name__ == "__main__":
     while True:
         os.makedirs('{1}/{0}'.format(epoch,data_set_path),exist_ok=True)
 
-        for idx, value in enumerate(data_generator(length, 8)):
+        for idx, value in enumerate(data_generator(train, 4)):
             print('epoch:', epoch, 'iter: ', idx, t.model.train_on_batch(x=value[0], y=value[1]))
 
         t.model.save('{1}/{0}/model.h5'.format(epoch, data_set_path))
@@ -269,3 +373,4 @@ if __name__ == "__main__":
             save_limb(result[3][0], '{2}/{0}/tr_limb_{1}.png'.format(epoch, idx, data_set_path))
 
         epoch = epoch+1
+        # BinaryCrossentropy()
