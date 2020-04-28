@@ -7,7 +7,6 @@ import os
 import numpy as np
 from GDI.utils.generator import BaseGenerator
 from keras.initializers import he_normal
-from keras.losses import BinaryCrossentropy
 from keras.layers import Conv2D, Flatten, Dense, BatchNormalization, Add, MaxPooling2D, UpSampling2D, concatenate, ReLU, Layer, Input, LeakyReLU
 import keras.backend  as K
 from keras.models import Model
@@ -20,11 +19,13 @@ from utils import encode,decode
 import tensorflow as tf
 from PIL import Image
 
-from conf import data_path
+from coco_data import data_generator
 
 
 class MultiPose(BaseModel):
     def __init__(self, input_shape, name="ModelA"):
+        self.heatmap = 18
+        self.limb = 17
         super().__init__(input_shape, name)
 
     def __bottleneck(self, input_layer, filters):
@@ -78,7 +79,7 @@ class MultiPose(BaseModel):
         return last_bottle
 
     def __intermediate(self, bottle_base, out_filter):
-        intermediate = Conv2D(kernel_size=1, filters=out_filter, strides=1, padding='same', activation='tanh')(bottle_base)
+        intermediate = Conv2D(kernel_size=1, filters=out_filter, strides=1, padding='same', activation='sigmoid')(bottle_base)
 
         conv = Conv2D(kernel_size=3, filters=256, strides=1, padding='same')(intermediate)
         conv = LeakyReLU()(conv)
@@ -93,15 +94,16 @@ class MultiPose(BaseModel):
         last = Conv2D(kernel_size=1, filters=128, strides=1, padding='same')(last)
         last = LeakyReLU()(last)
         last = BatchNormalization()(last)
-        last = Conv2D(kernel_size=1, filters=out_filter, strides=1, padding='same', activation='tanh')(last)
+        last = Conv2D(kernel_size=1, filters=out_filter, strides=1, padding='same', activation='sigmoid')(last)
         return last
 
     def FullHourglass(self, input_layer):
+
         filter = 256
         hour = self.__hourglass_module(input_layer, filter)
         bottle_base = self.__bottleneck(hour, filter)
-        confidence_intermediate, confidence_side = self.__intermediate(bottle_base, 17)
-        center_intermediate, center_side = self.__intermediate(bottle_base, 16)
+        confidence_intermediate, confidence_side = self.__intermediate(bottle_base, self.heatmap)
+        center_intermediate, center_side = self.__intermediate(bottle_base, self.limb)
 
         bottle_origin = self.__bottleneck(bottle_base, filter)
 
@@ -110,8 +112,8 @@ class MultiPose(BaseModel):
         # hour_glass 2
         hour = self.__hourglass_module(next_input, filter)
         bottle_base = self.__bottleneck(hour, filter)
-        confidence_last = self.__last_bottle(bottle_base, 17)
-        center_last = self.__last_bottle(bottle_base, 16)
+        confidence_last = self.__last_bottle(bottle_base, self.heatmap)
+        center_last = self.__last_bottle(bottle_base, self.limb)
 
         return confidence_intermediate, center_intermediate, confidence_last, center_last
 
@@ -129,7 +131,7 @@ class MultiPose(BaseModel):
         return output_layer
 
 
-def data_generator(name_list, batch_size, shuffle=True):
+def data_generator1(name_list, batch_size, shuffle=True):
     def __load_image(path):
         return encode(Image.open(path))
 
@@ -148,6 +150,7 @@ def data_generator(name_list, batch_size, shuffle=True):
             y_temp = []
             idx = j*batch_size + batch_idx
             idx = name_list[idxes[idx]]
+
             x_image = __load_image(root_path+'/input/{0}.png'.format(idx))
             for i in range(0, 17):
                 y_temp.append(np.reshape(__load_image(root_path+'/heatmap/{0}/{1}.png'.format(i, idx)), (64,64,1)))
@@ -189,26 +192,20 @@ def data_generator(name_list, batch_size, shuffle=True):
 
 
 def focal_loss(y_true, y_pred):
-
     alpha = 2
     beta = 4
     epsilon = K.epsilon()
 
-    y_true = (y_true + 1)/2.0
-    y_pred = (y_pred + 1)/2.0
     N = tf.reduce_sum(tf.where(tf.equal(y_true,1), y_true, tf.ones_like(y_true)))
     y_pred_1 = tf.where(tf.equal(y_true, 1), y_pred, tf.ones_like(y_pred))
     y_pred_0 = tf.where(tf.not_equal(y_true, 1), y_pred, tf.zeros_like(y_pred))
     y_true_0 = tf.where(tf.not_equal(y_true, 1), y_true, tf.zeros_like(y_true))
 
-    y_pred_0 = K.clip(y_pred_0, epsilon, 1.-epsilon)
-    y_pred_1 = K.clip(y_pred_1, epsilon, 1.-epsilon)
-    y_true_0 = K.clip(y_true_0, epsilon, 1.-epsilon)
-
-    y_pred_1 = tf.pow((1-y_pred_1), alpha) * tf.log(y_pred_1)
-    y_pred_0 = tf.pow((1-y_true_0), beta) * tf.pow(y_pred_0,alpha) * tf.log(1-y_pred_0)
+    y_pred_1 = tf.pow((1-y_pred_1), alpha) * tf.math.log(y_pred_1+epsilon)
+    y_pred_0 = tf.pow((1-y_true_0), beta) * tf.pow(y_pred_0,alpha) * tf.math.log(1-y_pred_0+epsilon)
     y_pred_sum = tf.reduce_sum(y_pred_1 + y_pred_0)
     return -y_pred_sum / N
+
 
 def save_limb(values, path):
     limb_gt = values[:,:,0]
@@ -305,7 +302,7 @@ def load_train_test_set():
 #
 #     return focal_loss_fixed
 
-def focal_loss(y_true, y_pred):
+def focal_loss1(y_true, y_pred):
     epsilon = K.epsilon()
 
     def one_value(b, yp, alpha):
@@ -330,47 +327,42 @@ def focal_loss(y_true, y_pred):
 
 
 if __name__ == "__main__":
-    data_set_path = "dataset/mpii/result_focal"
+    data_set_path = "D:\\coco\\result"
+
     os.makedirs(data_set_path, exist_ok=True)
 
-    train, test = load_train_test_set()
+    # train, test = load_train_test_set()
     length = 22400
-    t = MultiPose(input_shape=(256,256,3), hournum=2)
+    t = MultiPose(input_shape=(256,256,3))
+    t.summary()
     plot_model(t.model, to_file='model.png')
     optimzer = RMSprop(lr=2.5e-4)
     t.compile(optimizer=optimzer, loss=focal_loss, metrics=['mae'])
     # t.summary()
-    t.model.load_weights('{0}/129/model.h5'.format(data_set_path))
+    # t.model.load_weights('{0}/129/model.h5'.format(data_set_path))
     # t.compile(optimizer='adam', loss=['mse','mse'], metrics=['mae'])
     epoch = 1
     while True:
-        os.makedirs('{1}/{0}'.format(epoch,data_set_path),exist_ok=True)
-
-        for idx, value in enumerate(data_generator(train, 4)):
-            print('epoch:', epoch, 'iter: ', idx, t.model.train_on_batch(x=value[0], y=value[1]))
+        os.makedirs('{1}/{0}'.format(epoch, data_set_path),exist_ok=True)
 
         t.model.save('{1}/{0}/model.h5'.format(epoch, data_set_path))
-        for idx, value in enumerate(data_generator(10, 1, length-10, shuffle=False)):
-            save_heatmap(value[1][0][0], '{2}/{0}/heatmap_gt_{1}.png'.format(epoch, idx, data_set_path))
-            save_limb(value[1][1][0], '{2}/{0}/limb_gt_{1}.png'.format(epoch, idx, data_set_path))
+        for idx, value in enumerate(data_generator(batch_size=1, shuffle=False, is_train=False)):
+            try:
+                save_heatmap(value[1][0][0], '{2}/{0}/heatmap_gt_{1}.png'.format(epoch, idx, data_set_path))
+                save_limb(value[1][1][0], '{2}/{0}/limb_gt_{1}.png'.format(epoch, idx, data_set_path))
 
-            result = t.model.predict(value[0])
-            save_heatmap(result[0][0], '{2}/{0}/base_heatmap_{1}.png'.format(epoch, idx, data_set_path))
-            save_limb(result[1][0], '{2}/{0}/base_limb{1}.png'.format(epoch, idx, data_set_path))
+                result = t.model.predict(value[0])
+                save_heatmap(result[0][0], '{2}/{0}/base_heatmap_{1}.png'.format(epoch, idx, data_set_path))
+                save_limb(result[1][0], '{2}/{0}/base_limb{1}.png'.format(epoch, idx, data_set_path))
 
-            save_heatmap(result[2][0], '{2}/{0}/heatmap_{1}.png'.format(epoch, idx, data_set_path))
-            save_limb(result[3][0], '{2}/{0}/limb_{1}.png'.format(epoch, idx, data_set_path))
+                save_heatmap(result[2][0], '{2}/{0}/heatmap_{1}.png'.format(epoch, idx, data_set_path))
+                save_limb(result[3][0], '{2}/{0}/limb_{1}.png'.format(epoch, idx, data_set_path))
 
-        for idx, value in enumerate(data_generator(10, 1)):
-            save_heatmap(value[1][0][0], '{2}/{0}/tr_heatmap_gt_{1}.png'.format(epoch, idx, data_set_path))
-            save_limb(value[1][1][0], '{2}/{0}/tr_limb_gt_{1}.png'.format(epoch, idx, data_set_path))
+            except:
+                continue
 
-            result = t.model.predict(value[0])
-            save_heatmap(result[0][0], '{2}/{0}/tr_base_heatmap_{1}.png'.format(epoch, idx, data_set_path))
-            save_limb(result[1][0], '{2}/{0}/tr_base_limb{1}.png'.format(epoch, idx, data_set_path))
-
-            save_heatmap(result[2][0], '{2}/{0}/tr_heatmap_{1}.png'.format(epoch, idx, data_set_path))
-            save_limb(result[3][0], '{2}/{0}/tr_limb_{1}.png'.format(epoch, idx, data_set_path))
 
         epoch = epoch+1
-        # BinaryCrossentropy()
+
+        for idx, value in enumerate(data_generator(batch_size=4, shuffle=True, is_train=True)):
+            print('epoch:', epoch, 'iter: ', idx, t.model.train_on_batch(x=value[0], y=value[1]))
