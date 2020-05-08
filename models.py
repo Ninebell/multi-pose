@@ -5,12 +5,7 @@ from keras.optimizers import RMSprop
 import math
 import os
 import numpy as np
-from GDI.utils.generator import BaseGenerator
-from keras.initializers import he_normal
-from keras.layers import Conv2D, Flatten, Dense, BatchNormalization, Add, MaxPooling2D, UpSampling2D, concatenate, ReLU, Layer, Input, LeakyReLU
-import keras.backend  as K
-from keras.models import Model
-from keras.optimizers import Adam
+from tqdm import tqdm
 from keras.layers import Conv2D, Flatten, Dense, BatchNormalization, Add, MaxPooling2D, UpSampling2D, concatenate, ReLU, Layer, Input, LeakyReLU
 import keras.backend as K
 
@@ -24,8 +19,8 @@ from coco_data import data_generator
 
 class MultiPose(BaseModel):
     def __init__(self, input_shape, name="ModelA"):
-        self.heatmap = 18
-        self.limb = 17
+        self.heatmap = 17
+        self.limb = 16
         super().__init__(input_shape, name)
 
     def __bottleneck(self, input_layer, filters):
@@ -84,6 +79,7 @@ class MultiPose(BaseModel):
         conv = Conv2D(kernel_size=3, filters=256, strides=1, padding='same')(intermediate)
         conv = LeakyReLU()(conv)
         conv = BatchNormalization()(conv)
+
         conv = self.__bottleneck(conv, 256)
         return intermediate, conv
 
@@ -107,7 +103,11 @@ class MultiPose(BaseModel):
 
         bottle_origin = self.__bottleneck(bottle_base, filter)
 
-        next_input = Add()([bottle_origin, confidence_side, center_side, input_layer])
+        next_input = concatenate([bottle_origin, confidence_side, center_side], axis=-1)
+        # next_input = concatenate([next_input, center_side], axis=-1)
+
+        next_input = Conv2D(filters=filter, kernel_size=3, strides=1, padding='same')(next_input)
+        next_input = BatchNormalization()(LeakyReLU()(next_input))
 
         # hour_glass 2
         hour = self.__hourglass_module(next_input, filter)
@@ -119,8 +119,8 @@ class MultiPose(BaseModel):
 
     def __build_model__(self, input_layer):
         conv = Conv2D(kernel_size=7, filters=256, strides=2, padding='same')(input_layer)
-        conv = BatchNormalization()(conv)
         conv = LeakyReLU()(conv)
+        conv = BatchNormalization()(conv)
 
         init_bottle = self.__bottleneck(conv, 256)
         max = MaxPooling2D()(init_bottle)
@@ -191,18 +191,18 @@ def data_generator1(name_list, batch_size, shuffle=True):
         yield x, y
 
 
-def focal_loss(y_true, y_pred):
+def focal_loss1(y_true, y_pred):
     alpha = 2
     beta = 4
     epsilon = K.epsilon()
 
-    N = tf.reduce_sum(tf.where(tf.equal(y_true,1), y_true, tf.ones_like(y_true)))
+    N = tf.reduce_sum(tf.where(tf.equal(y_true,1), y_true, tf.zeros_like(y_true)))
     y_pred_1 = tf.where(tf.equal(y_true, 1), y_pred, tf.ones_like(y_pred))
     y_pred_0 = tf.where(tf.not_equal(y_true, 1), y_pred, tf.zeros_like(y_pred))
-    y_true_0 = tf.where(tf.not_equal(y_true, 1), y_true, tf.zeros_like(y_true))
+    # y_true_0 = tf.where(tf.not_equal(y_true, 1), y_true, tf.zeros_like(y_true))
 
     y_pred_1 = tf.pow((1-y_pred_1), alpha) * tf.math.log(y_pred_1+epsilon)
-    y_pred_0 = tf.pow((1-y_true_0), beta) * tf.pow(y_pred_0,alpha) * tf.math.log(1-y_pred_0+epsilon)
+    y_pred_0 = tf.pow((1-y_true), beta) * tf.pow(y_pred_0,alpha) * tf.math.log(1-y_pred_0+epsilon)
     y_pred_sum = tf.reduce_sum(y_pred_1 + y_pred_0)
     return -y_pred_sum / N
 
@@ -302,7 +302,7 @@ def load_train_test_set():
 #
 #     return focal_loss_fixed
 
-def focal_loss1(y_true, y_pred):
+def focal_loss(y_true, y_pred):
     epsilon = K.epsilon()
 
     def one_value(b, yp, alpha):
@@ -311,8 +311,8 @@ def focal_loss1(y_true, y_pred):
     def no_one_value(b, yt, yp, alpha, beta):
         return K.clip(-K.pow(b - b * yt, beta) * K.pow(b * yp, alpha) * K.log(b - yp), epsilon, 1.-epsilon)
 
-    y_true = (y_true + 1) / 2.0
-    y_pred = (y_pred + 1) / 2.0 + epsilon
+    # y_true = (y_true + 1) / 2.0
+    # y_pred = (y_pred + 1) / 2.0 + epsilon
 
     base = K.cast(K.equal(y_true, 1), dtype='float32')
     no_one = (base - 1) * -1
@@ -327,27 +327,35 @@ def focal_loss1(y_true, y_pred):
 
 
 if __name__ == "__main__":
-    data_set_path = "D:\\coco\\result"
+    data_set_path = "D:\\{0}\\result".format('mpii')
 
     os.makedirs(data_set_path, exist_ok=True)
 
-    # train, test = load_train_test_set()
-    length = 22400
     t = MultiPose(input_shape=(256,256,3))
-    t.summary()
-    plot_model(t.model, to_file='model.png')
-    optimzer = RMSprop(lr=2.5e-4)
-    t.compile(optimizer=optimzer, loss=focal_loss, metrics=['mae'])
     # t.summary()
-    # t.model.load_weights('{0}/129/model.h5'.format(data_set_path))
-    # t.compile(optimizer='adam', loss=['mse','mse'], metrics=['mae'])
-    epoch = 1
-    while True:
-        os.makedirs('{1}/{0}'.format(epoch, data_set_path),exist_ok=True)
+    # plot_model(t.model, to_file='model.png')
+    optimizer = RMSprop()
+    t.compile(optimizer='adam', loss='mae', metrics=['mae'])
 
+    epoch = 0
+
+    while True:
+        epoch = epoch+1
+        os.makedirs('{1}/{0}'.format(epoch, data_set_path),exist_ok=True)
+        losses = []
+
+        for value in tqdm(data_generator(batch_size=4, shuffle=False, is_train=True)):
+            loss = t.model.train_on_batch(x=value[0], y=value[1])
+            losses.append(loss[1:5])
+
+        losses = np.asarray(losses)
+        print("epoch {} loss {}".format(epoch, losses.sum()))
         t.model.save('{1}/{0}/model.h5'.format(epoch, data_set_path))
-        for idx, value in enumerate(data_generator(batch_size=1, shuffle=False, is_train=False)):
+
+        for idx, value in enumerate(data_generator(batch_size=1, shuffle=False, is_train=True)):
             try:
+                if idx > 10:
+                    break
                 save_heatmap(value[1][0][0], '{2}/{0}/heatmap_gt_{1}.png'.format(epoch, idx, data_set_path))
                 save_limb(value[1][1][0], '{2}/{0}/limb_gt_{1}.png'.format(epoch, idx, data_set_path))
 
@@ -360,9 +368,3 @@ if __name__ == "__main__":
 
             except:
                 continue
-
-
-        epoch = epoch+1
-
-        for idx, value in enumerate(data_generator(batch_size=4, shuffle=True, is_train=True)):
-            print('epoch:', epoch, 'iter: ', idx, t.model.train_on_batch(x=value[0], y=value[1]))

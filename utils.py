@@ -266,8 +266,9 @@ def draw_limb(idx, points, radius):
     return base_map
 
 
-def save_image_total(limbs, index):
-    os.makedirs('dataset/mpii/center_limb/16', exist_ok=True)
+def save_image_total(limbs, index, is_train):
+    path = 'train' if is_train else 'validate'
+    os.makedirs('dataset/mpii/{0}/center_limb/16'.format(path), exist_ok=True)
     base = np.zeros((64,64))
     limbs = np.asarray(limbs)
     for i in range(0,16):
@@ -277,26 +278,27 @@ def save_image_total(limbs, index):
     image = decode(base)
     # image = np.asarray(base * 255, dtype=np.uint8)
     image = Image.fromarray(image)
-    image.save('dataset/mpii/center_limb/16/{0}.png'.format(index))
+    image.save('dataset/mpii/{1}/center_limb/16/{0}.png'.format(index, path))
 
 
-def save_images(confidences, limbs, index):
+def save_images(confidences, limbs, index, is_train):
+    path = 'train' if is_train else 'validate'
     for idx in range(len(confidences)):
-        os.makedirs('dataset/mpii/heatmap/{0}'.format(idx), exist_ok=True)
+        os.makedirs('dataset/mpii/{1}/heatmap/{0}'.format(idx,path), exist_ok=True)
         # confidence = np.asarray(confidences[idx] * 255, dtype=np.uint8)
         confidence = decode(confidences[idx])
         confidence = np.reshape(confidence, (64, 64))
         image = Image.fromarray(confidence)
-        image.save('dataset/mpii/heatmap/{0}/{1}.png'.format(idx,index))
+        image.save('dataset/mpii/{2}/heatmap/{0}/{1}.png'.format(idx,index,path))
 
         if idx != 16:
-            os.makedirs('dataset/mpii/center_limb/{0}'.format(idx), exist_ok=True)
+            os.makedirs('dataset/mpii/{1}/center_limb/{0}'.format(idx, path), exist_ok=True)
             limb = decode(limbs[idx])
             # limb = np.asarray(limbs[idx] * 255, dtype=np.uint8)
             limb = np.reshape(limb, (64, 64))
 
             image = Image.fromarray(limb)
-            image.save('dataset/mpii/center_limb/{0}/{1}.png'.format(idx,index))
+            image.save('dataset/mpii/{2}/center_limb/{0}/{1}.png'.format(idx,index, path))
 
 
 def flop_image(confidences,limbs):
@@ -362,18 +364,21 @@ def flop_points(points):
     reverse_points[12] = points[13]
     return reverse_points
 
+
 if __name__ == "__main__":
     # save_joints()
     # split_train_test()
+    is_train = False
 
-    x, y = load_dataset(True)
+    x, y = load_dataset(is_train)
 
     idxes = 1
 
+    path = '/train/' if is_train else '/validate/'
     lines = {}
-    os.makedirs('dataset/mpii/input', exist_ok=True)
-    os.makedirs('dataset/mpii/heatmap', exist_ok=True)
-    os.makedirs('dataset/mpii/center_limb', exist_ok=True)
+    os.makedirs('dataset/mpii/{0}/input'.format(path), exist_ok=True)
+    os.makedirs('dataset/mpii/{0}/heatmap'.format(path), exist_ok=True)
+    os.makedirs('dataset/mpii/{0}/center_limb'.format(path), exist_ok=True)
 
     for image_path, person in tqdm.tqdm(zip(x, y)):
         image = Image.open(image_path)
@@ -411,21 +416,21 @@ if __name__ == "__main__":
         # lines[idxes] = np.asarray(person).tolist()
 
         image = image.resize((256,256))
-        image.save('dataset/mpii/input/{0}.png'.format(idxes))
+        image.save('dataset/mpii/{1}/input/{0}.png'.format(idxes, path))
 
-        save_images(confidences,limbs,idxes)
-        save_image_total(limbs,idxes)
+        save_images(confidences,limbs,idxes, is_train)
+        save_image_total(limbs,idxes, is_train)
         idxes = image_path.split('/')[-1].split('.')[0]+"1"
         # idxes[-1] = "1"
 
         image = np.array(image)
         image = cv2.flip(image, 1)
         image = Image.fromarray(image)
-        image.save('dataset/mpii/input/{0}.png'.format(idxes))
+        image.save('dataset/mpii/{1}/input/{0}.png'.format(idxes, path))
 
         confidences, limbs = flop_image(confidences, limbs)
-        save_images(confidences, limbs, idxes)
-        save_image_total(limbs,idxes)
+        save_images(confidences, limbs, idxes, is_train)
+        save_image_total(limbs,idxes, is_train)
         # idxes = idxes + 1
 
 
