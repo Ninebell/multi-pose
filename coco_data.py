@@ -214,56 +214,6 @@ def center_map_create(annotation_dict, shape, is_train=True):
         Image.fromarray(all).save(img_file_path)
 
 
-def data_generator(batch_size, shuffle=True, is_train=True):
-    base_path = root_path+train_path if is_train else root_path+validate_path
-    dirs = os.listdir(base_path+heat_map_path+'0')[:100]
-    if shuffle:
-        random.shuffle(dirs)
-    batch_iter = len(dirs)//batch_size
-    heat_map_len = len(os.listdir(base_path + heat_map_path))
-    limb_len = len(os.listdir(base_path + limb_path))
-    for idx in range(batch_iter):
-        # print(idx)
-        x = []
-        heat_maps = []
-        limbs = []
-
-        for b_i in range(batch_size):
-            file_name = dirs[idx*batch_size + b_i].split('.')[0]
-            img = Image.open(base_path+'\\input\\'+file_name+".png")
-            if img.mode == 'L':
-                continue
-            # print(img.mode, file_name)
-            img = img.resize((256,256))
-
-            x.append(np.asarray(img)/255.)
-
-            heat_map_file_path = base_path + heat_map_path + '\\{}\\'.format(0) + file_name + ".png"
-            base_heat = np.asarray(Image.open(heat_map_file_path)) / 255.
-            base_heat = np.reshape(base_heat, (64,64,1))
-
-            for h in range(1, heat_map_len):
-                heat_map_file_path = base_path+heat_map_path+'\\{}\\'.format(h)+file_name+".png"
-                heat = np.asarray(Image.open(heat_map_file_path))/255.
-                heat = np.reshape(heat, (64,64,1))
-                base_heat = np.concatenate([base_heat, heat], axis=-1)
-
-            limb_map_file_path = base_path + limb_path + '\\{}\\'.format(0) + file_name + ".png"
-            base_limb = np.asarray(Image.open(limb_map_file_path)) / 255.
-            base_limb = np.reshape(base_limb, (64,64,1))
-            for l in range(1, limb_len):
-                limb_map_file_path = base_path+limb_path+'\\{}\\'.format(l)+file_name+".png"
-                limb = np.asarray(Image.open(limb_map_file_path))/255.
-                limb = np.reshape(limb, (64,64,1))
-                base_limb = np.concatenate([base_limb, limb], axis=-1)
-
-            heat_maps.append(base_heat)
-            limbs.append(base_limb)
-
-        x = np.asarray(x)
-        heat_maps = np.asarray(heat_maps)
-        limbs = np.asarray(limbs)
-        yield x, [heat_maps, limbs, heat_maps, limbs]
 
 
 if __name__ == "__main__":

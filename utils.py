@@ -10,9 +10,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 import math
 import json
+from conf import *
 
 import os
 import cv2
+import random
 
 kernel_size = 5
 base_shape = (64,64,1)
@@ -363,6 +365,82 @@ def flop_points(points):
     reverse_points[11] = points[14]
     reverse_points[12] = points[13]
     return reverse_points
+
+def data_generator(batch_size, shuffle=True, is_train=True):
+    base_path = root_path+train_path if is_train else root_path+validate_path
+    dirs = os.listdir(base_path+heat_map_path+'0')
+    if shuffle:
+        random.shuffle(dirs)
+    batch_iter = len(dirs)//batch_size
+    heat_map_len = len(os.listdir(base_path + heat_map_path))
+    limb_len = len(os.listdir(base_path + limb_path))
+    for idx in range(batch_iter):
+        # print(idx)
+        x = []
+        heat_maps = []
+        limbs = []
+
+        for b_i in range(batch_size):
+            file_name = dirs[idx*batch_size + b_i].split('.')[0]
+            img = Image.open(base_path+'\\input\\'+file_name+".png")
+            if img.mode == 'L':
+                continue
+            # print(img.mode, file_name)
+            img = img.resize((256,256))
+            img = np.asarray(img)/255.
+            img = np.moveaxis(img, 2, 0)
+            x.append(img)
+
+            heat_map_file_path = base_path + heat_map_path + '\\{}\\'.format(0) + file_name + ".png"
+            base_heat = np.asarray(Image.open(heat_map_file_path)) / 255.
+            base_heat = np.reshape(base_heat, (64,64,1))
+
+            for h in range(1, heat_map_len):
+                heat_map_file_path = base_path+heat_map_path+'\\{}\\'.format(h)+file_name+".png"
+                heat = np.asarray(Image.open(heat_map_file_path))/255.
+                heat = np.reshape(heat, (64,64,1))
+                base_heat = np.concatenate([base_heat, heat], axis=-1)
+
+            limb_map_file_path = base_path + limb_path + '\\{}\\'.format(0) + file_name + ".png"
+            base_limb = np.asarray(Image.open(limb_map_file_path)) / 255.
+            base_limb = np.reshape(base_limb, (64,64,1))
+            for l in range(1, limb_len):
+                limb_map_file_path = base_path+limb_path+'\\{}\\'.format(l)+file_name+".png"
+                limb = np.asarray(Image.open(limb_map_file_path))/255.
+                limb = np.reshape(limb, (64,64,1))
+                base_limb = np.concatenate([base_limb, limb], axis=-1)
+
+
+            base_heat = np.moveaxis(base_heat, 2, 0)
+            base_limb = np.moveaxis(base_limb, 2, 0)
+            heat_maps.append(base_heat)
+            limbs.append(base_limb)
+
+        x = np.asarray(x)
+        heat_maps = np.asarray(heat_maps)
+        limbs = np.asarray(limbs)
+        yield x, heat_maps, limbs
+
+def save_limb(values, path):
+    limb_gt = values[:,:,0]
+    for k in range(1, 16):
+        limb_gt = np.maximum(np.reshape(values[:, :, k], (64,64)), limb_gt)
+    limb_gt = decode(limb_gt)
+    # limb_gt = np.asarray(((limb_gt+1) * 127.5), dtype=np.uint8)
+    limb_gt = np.reshape(limb_gt, (64, 64))
+    image = Image.fromarray(limb_gt)
+    image.save(path)
+
+
+def save_heatmap(values, path):
+    gt = values[:,:,0]
+    for k in range(1, 17):
+        gt = np.maximum(np.reshape(values[ :, :, k], (64, 64)), gt)
+    gt = decode(gt)
+    # gt = np.asarray(((gt+1) * 125.), dtype=np.uint8)
+    gt = np.reshape(gt, (64, 64))
+    image = Image.fromarray(gt)
+    image.save(path)
 
 
 if __name__ == "__main__":
