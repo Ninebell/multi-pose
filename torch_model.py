@@ -13,17 +13,66 @@ from PIL import ImageDraw, Image
 # from models import save_limb, save_heatmap
 
 
+class AttentionBlock(nn.Module):
+    def __init__(self, feature, ratio):
+        super(AttentionBlock, self).__init__()
+        self.__build__(feature, ratio)
+
+    def __build__(self,feature, ratio):
+        self.shared_mlp1 = nn.Linear(feature, feature//ratio)
+        self.shared_mlp2 = nn.Linear(feature//ratio, feature)
+
+        self.avg_pool = nn.AvgPool2d(3, stride=1, padding=1)
+        self.max_pool = nn.MaxPool2d(3, stride=1, padding=1)
+        self.attention_conv = nn.Conv2d(feature*2, feature, 7, stride=1, padding=3)
+        self.avg_pool = torch.nn.AdaptiveAvgPool2d((1, 1))
+        self.max_pool = torch.nn.AdaptiveMaxPool2d((1, 1))
+
+    def forward(self, x):
+        init = x
+        ch_avg = self.avg_pool(x)
+        ch_max = self.max_pool(x)
+        ch_avg = torch.flatten(ch_avg, start_dim=1)
+        ch_max = torch.flatten(ch_max, start_dim=1)
+
+        ch_avg = self.shared_mlp1(ch_avg)
+        ch_avg = self.shared_mlp2(ch_avg)
+
+        ch_max = self.shared_mlp1(ch_max)
+        ch_max = self.shared_mlp2(ch_max)
+
+        channel_attention = torch.sigmoid(ch_max + ch_avg)
+
+        channel_attention = channel_attention.view((channel_attention.shape[0],channel_attention.shape[1], 1, 1))
+        x = channel_attention*init
+
+        sp_avg = self.avg_pool(x)
+        sp_max = self.max_pool(x)
+        sp_conv = torch.cat((sp_avg, sp_max), 1)
+        sp_conv = self.attention_conv(sp_conv)
+        sp_conv = torch.sigmoid(sp_conv)
+
+        x = x * sp_conv
+        return x
+
+
 class ResidualBlock(nn.Module):
-    def __init__(self, input_feature, output_feature):
+    def __init__(self, input_feature, output_feature, attention):
         super(ResidualBlock, self).__init__()
         self.input_feature = input_feature
         self.output_feature = output_feature
+        self.attention=attention
         self.__build__()
 
     def __build__(self):
         self.conv1 = nn.Conv2d(self.input_feature, self.output_feature, 1, stride=1, padding=0)
         self.conv2 = nn.Conv2d(self.output_feature, self.output_feature, 3, stride=1, padding=1)
         self.conv3 = nn.Conv2d(self.output_feature, self.output_feature, 1, stride=1, padding=0)
+        if self.attention:
+            self.attention = AttentionBlock(self.output_feature, 8)
+
+        # self.channel_attention =
+
         if self.input_feature != self.output_feature:
             self.conv4 = nn.Conv2d(self.input_feature, self.output_feature,3, stride=1, padding=1)
 
@@ -33,9 +82,13 @@ class ResidualBlock(nn.Module):
 
     def forward(self, x):
         init = x
+        # print(x.size()[-2:])
         x = torch.selu(self.batch1(self.conv1(x)))
         x = torch.selu(self.batch2(self.conv2(x)))
         x = torch.selu(self.batch3(self.conv3(x)))
+        if self.attention:
+            x = self.attention.forward(x)
+
         if self.input_feature != self.output_feature:
             init = torch.selu(self.conv4(init))
         return x + init
@@ -53,26 +106,26 @@ class Hourglass(nn.Module):
         i_f = self.input_feature
         o_f = self.output_feature
 
-        self.down1 = ResidualBlock(i_f, o_f)
-        self.down2 = ResidualBlock(o_f, o_f)
-        self.down3 = ResidualBlock(o_f, o_f)
-        self.down4 = ResidualBlock(o_f, o_f)
-        self.down5 = ResidualBlock(o_f, o_f)
+        self.down1 = ResidualBlock(i_f, o_f, False)
+        self.down2 = ResidualBlock(o_f, o_f, False)
+        self.down3 = ResidualBlock(o_f, o_f, False)
+        self.down4 = ResidualBlock(o_f, o_f, False)
+        self.down5 = ResidualBlock(o_f, o_f, False)
 
-        self.skip1 = ResidualBlock(o_f, o_f)
-        self.skip2 = ResidualBlock(o_f, o_f)
-        self.skip3 = ResidualBlock(o_f, o_f)
-        self.skip4 = ResidualBlock(o_f, o_f)
+        self.skip1 = ResidualBlock(o_f, o_f, True)
+        self.skip2 = ResidualBlock(o_f, o_f, True)
+        self.skip3 = ResidualBlock(o_f, o_f, True)
+        self.skip4 = ResidualBlock(o_f, o_f, True)
 
-        self.middle1 = ResidualBlock(o_f, o_f)
-        self.middle2 = ResidualBlock(o_f, o_f)
-        self.middle3 = ResidualBlock(o_f, o_f)
+        self.middle1 = ResidualBlock(o_f, o_f, False)
+        self.middle2 = ResidualBlock(o_f, o_f, False)
+        self.middle3 = ResidualBlock(o_f, o_f, False)
 
-        self.up1 = ResidualBlock(i_f, o_f)
-        self.up2 = ResidualBlock(o_f, o_f)
-        self.up3 = ResidualBlock(o_f, o_f)
-        self.up4 = ResidualBlock(o_f, o_f)
-        self.up5 = ResidualBlock(o_f, o_f)
+        self.up1 = ResidualBlock(i_f, o_f, False)
+        self.up2 = ResidualBlock(o_f, o_f, False)
+        self.up3 = ResidualBlock(o_f, o_f, False)
+        self.up4 = ResidualBlock(o_f, o_f, False)
+        self.up5 = ResidualBlock(o_f, o_f, False)
 
     def forward(self, x):
         down1 = self.down1(x)
@@ -132,9 +185,11 @@ class CenterNet(nn.Module):
         self.conv7 = nn.Conv2d(3, feature, 3, stride=2, padding=1)
         self.conv3 = nn.Conv2d(feature, feature, 3, stride=1, padding=1)
         self.hour1 = Hourglass(feature, feature)
+
         self.hour2 = Hourglass(feature, feature)
-        self.res1 = ResidualBlock(feature, feature)
-        self.res2 = ResidualBlock(feature, feature)
+        self.res1 = ResidualBlock(feature, feature, False)
+        self.res2 = ResidualBlock(feature, feature, False)
+        self.res3 = ResidualBlock(feature, feature, False)
         # self.intermediate = nn.Conv2d(feature, self.output, 1, stride=1, padding=0)
         # self.intermediate_res = ResidualBlock(self.output, feature)
         self.heat_last_f = nn.Conv2d(feature, feature, 3, stride=1, padding=1)
@@ -152,21 +207,17 @@ class CenterNet(nn.Module):
         x = F.max_pool2d(torch.selu(self.batch2(self.conv3(x))), (2,2))
         # init = x
         x = self.hour1(x)
+        x = self.res1(x)
         x = self.hour2(x)
-        res = self.res1(x)
-        res = self.res2(res)
+        res = self.res2(x)
+        res = self.res3(res)
 
         heat = torch.selu(self.batch3(self.heat_last_f(res)))
         heat = torch.sigmoid(self.heat_last(heat))
 
         size = torch.selu(self.batch4(self.size_last_f(res)))
         size = torch.sigmoid(self.size_last(size))
-        # intermediate = self.intermediate(x)
-        # intermediate_res = self.intermediate_res(intermediate)
-        # x = res + intermediate_res + init
-        # x = self.hour2(x)
-        # x = F.selu(self.last1(x))
-        # x = F.selu(self.last2(x))
+
         return heat, size
 
 
@@ -190,29 +241,6 @@ def focal_loss(output, target):
     zeros_board = torch.pow(1-target, beta) * torch.pow(zeros_board, alpha) * torch.log(1-zeros_board+epsilon)
 
     return -(ones_board+zeros_board).sum()/N
-
-
-def size_loss(output, target, center):
-
-    epsilon = 1e-10
-    zeros = torch.zeros((64,64)).cuda()
-    ones = torch.ones((64,64)).cuda()
-
-    N = torch.where(center == 1, center, zeros)
-    N = torch.sum(N)
-
-    l1_output = torch.where(center == 1, output, zeros)
-    log_output = torch.where(center == 1, output, ones)
-
-    l1_loss = torch.abs(l1_output-target)
-    # log_loss = torch.abs(torch.log(log_output+epsilon)-torch.log(target+epsilon))
-
-    l1 = l1_loss.sum()/N * 0.1
-    logl1 = torch.log(1-torch.tanh(l1_loss)+epsilon).sum()/N
-
-    return l1 - logl1
-    # return l1
-    # return logl1
 
 
 def center_loss(output, target):
@@ -249,21 +277,9 @@ def draw_roi(img, heat, size):
     return img
 
 
-def make_roi(heat, size):
-    rois = []
-    for r in range(1,heat.shape[0]-1):
-        for c in range(1,heat.shape[1]-1):
-            if heat[r,c] == np.max(heat[r-1:r+2, c-1:c+2]) and heat[r,c] > 0.5:
-                w = size[0, r,c] / 592 * 256
-                h = size[1, r,c] / 480 * 256
-                rois.append((c - w/2,r - h/2, w, h))
-
-    return rois
-
-
 if __name__ == "__main__":
     epoches = 1000
-    min_loss = 100009.47
+    min_loss = 10000
 
     data_set_path = "D:\\{0}\\result".format('mpii')
 
@@ -283,15 +299,19 @@ if __name__ == "__main__":
 
     optim = torch.optim.Adam(net.parameters(), lr)
 
-    # net.load_state_dict(torch.load('./models/min_loss{0:.2f}.dict'))
+    net.load_state_dict(torch.load( '{1}/{0}/model.dict'.format(38, data_set_path)))
 
-    epoch = 0
+    pytorch_total_params = sum(p.numel() for p in net.parameters())
+
+    print(pytorch_total_params)
+
+    epoch = 38
     # for epoch in range(1, epoches):
     while True:
         epoch = epoch+1
         iou_count = 0
         epoch_loss = 0
-        for data in tqdm(data_generator(12, shuffle=True, is_train=True)):
+        for data in tqdm(data_generator(8, shuffle=True, is_train=True)):
             x, heat, limb = data
             if is_cuda:
                 x = torch.from_numpy(x).type(torch.FloatTensor).cuda()

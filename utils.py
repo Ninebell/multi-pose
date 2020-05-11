@@ -286,21 +286,34 @@ def save_image_total(limbs, index, is_train):
 def save_images(confidences, limbs, index, is_train):
     path = 'train' if is_train else 'validate'
     for idx in range(len(confidences)):
-        os.makedirs('dataset/mpii/{1}/heatmap/{0}'.format(idx,path), exist_ok=True)
+        heat_dir_path = 'dataset/mpii/{1}/heatmap/{0}'.format(idx,path)
+        heat_map_path = 'dataset/mpii/{2}/heatmap/{0}/{1}.png'.format(idx,index,path)
+        os.makedirs(heat_dir_path, exist_ok=True)
         # confidence = np.asarray(confidences[idx] * 255, dtype=np.uint8)
         confidence = decode(confidences[idx])
         confidence = np.reshape(confidence, (64, 64))
         image = Image.fromarray(confidence)
-        image.save('dataset/mpii/{2}/heatmap/{0}/{1}.png'.format(idx,index,path))
+        if os.path.isfile(heat_map_path):
+            org = Image.open(heat_map_path)
+            org = np.asarray(org)
+            image = np.maximum(org, image)
+
+        image.save(heat_map_path)
+
 
         if idx != 16:
-            os.makedirs('dataset/mpii/{1}/center_limb/{0}'.format(idx, path), exist_ok=True)
+            limb_dir_path = 'dataset/mpii/{1}/center_limb/{0}'.format(idx, path)
+            limb_map_path = 'dataset/mpii/{2}/center_limb/{0}/{1}.png'.format(idx,index, path)
+            os.makedirs(limb_dir_path, exist_ok=True)
             limb = decode(limbs[idx])
-            # limb = np.asarray(limbs[idx] * 255, dtype=np.uint8)
             limb = np.reshape(limb, (64, 64))
+            if os.path.isfile(limb_map_path):
+                org = Image.open(limb_map_path)
+                org = np.asarray(org)
+                limb = np.maximum(org, limb)
 
             image = Image.fromarray(limb)
-            image.save('dataset/mpii/{2}/center_limb/{0}/{1}.png'.format(idx,index, path))
+            image.save(limb_map_path)
 
 
 def flop_image(confidences,limbs):
@@ -460,15 +473,10 @@ if __name__ == "__main__":
 
     for image_path, person in tqdm.tqdm(zip(x, y)):
         image = Image.open(image_path)
-        idxes = image_path.split('/')[-1].split('.')[0]+"0"
-        # print(idxes)
+        file_name = image_path.split('/')[-1].split('.')[0]+"n"
 
         confidences = [np.zeros((64,64))for i in range(17)]
         limbs = [np.zeros((64,64))for i in range(16)]
-
-        # offset_base = np.zeros((64,64,2))
-
-        # save_point = []
 
         for points in person:
             width, height = image.size
@@ -476,15 +484,12 @@ if __name__ == "__main__":
             points[:, 0] = points[:, 0] * 64 // width
             points[:, 1] = points[:, 1] * 64 // height
             limb_idx = 0
-            radius = 3 + np.log2((np.max(points[:,0]) - np.min(points[:,0])) * (np.max(points[:,1]) - np.min(points[:,1])))
-            # if radius < 3:
-            #     radius = 3
-            limb_radius = np.sqrt(radius)
+            radius = 1.5
+            limb_radius = 3
 
             for idx, point in enumerate(points):
                 kernel = np.reshape(create_kernel(base_shape, (point[0], point[1]), radius=radius), (64,64))
                 confidences[idx] = np.maximum(confidences[idx], kernel)
-                # if idx != 9:
                 limbs[limb_idx] = np.maximum(limbs[limb_idx], np.reshape(draw_limb(idx,points, limb_radius), (64,64)))
                 limb_idx = limb_idx + 1
 
@@ -494,10 +499,9 @@ if __name__ == "__main__":
         # lines[idxes] = np.asarray(person).tolist()
 
         image = image.resize((256,256))
-        image.save('dataset/mpii/{1}/input/{0}.png'.format(idxes, path))
-
-        save_images(confidences,limbs,idxes, is_train)
-        save_image_total(limbs,idxes, is_train)
+        image.save('dataset/mpii/{1}/input/{0}.png'.format(file_name, path))
+        save_images(confidences, limbs, file_name, is_train)
+        save_image_total(limbs, file_name, is_train)
         idxes = image_path.split('/')[-1].split('.')[0]+"1"
         # idxes[-1] = "1"
 
