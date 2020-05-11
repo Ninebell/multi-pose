@@ -11,6 +11,8 @@ import matplotlib.pyplot as plt
 import math
 import json
 
+from conf import *
+
 import os
 import cv2
 
@@ -29,7 +31,7 @@ def encode(image):
 
 def save_joints():
     joint_data_fn = 'dataset/mpii/data.json'
-    mat = loadmat('dataset/mpii/mpii_human_pose_v1_u12_1.mat')
+    mat = loadmat('E:\\dataset\\mpii\\mpii_human_pose_v1_u12_1.mat')
 
     fp = open(joint_data_fn, 'w')
 
@@ -83,7 +85,7 @@ def save_joints():
 
                     if len(joint_pos) == 16:
                         data = {
-                            'filename': 'dataset/mpii/images/'+img_fn,
+                            'filename': 'E:\\dataset\\mpii\\mpii_human_pose_v1\\images\\'+img_fn,
                             'train': train_flag,
                             'head_rect': head_rect,
                             'is_visible': vis,
@@ -366,9 +368,9 @@ def flop_points(points):
 
 
 if __name__ == "__main__":
-    # save_joints()
-    # split_train_test()
-    is_train = False
+    save_joints()
+    split_train_test()
+    is_train = True
 
     x, y = load_dataset(is_train)
 
@@ -382,8 +384,8 @@ if __name__ == "__main__":
 
     for image_path, person in tqdm.tqdm(zip(x, y)):
         image = Image.open(image_path)
-        idxes = image_path.split('/')[-1].split('.')[0]+"0"
-        # print(idxes)
+        idxes = image_path.split('\\')[-1].split('.')[0]+"0"
+        print(idxes)
 
         confidences = [np.zeros((64,64))for i in range(17)]
         limbs = [np.zeros((64,64))for i in range(16)]
@@ -420,7 +422,7 @@ if __name__ == "__main__":
 
         save_images(confidences,limbs,idxes, is_train)
         save_image_total(limbs,idxes, is_train)
-        idxes = image_path.split('/')[-1].split('.')[0]+"1"
+        idxes = image_path.split('\\')[-1].split('.')[0]+"1"
         # idxes[-1] = "1"
 
         image = np.array(image)
