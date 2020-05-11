@@ -10,11 +10,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import math
 import json
+from conf import *
 
 from conf import *
 
 import os
 import cv2
+import random
 
 kernel_size = 5
 base_shape = (64,64,1)
@@ -286,21 +288,34 @@ def save_image_total(limbs, index, is_train):
 def save_images(confidences, limbs, index, is_train):
     path = 'train' if is_train else 'validate'
     for idx in range(len(confidences)):
-        os.makedirs('dataset/mpii/{1}/heatmap/{0}'.format(idx,path), exist_ok=True)
+        heat_dir_path = 'dataset/mpii/{1}/heatmap/{0}'.format(idx,path)
+        heat_map_path = 'dataset/mpii/{2}/heatmap/{0}/{1}.png'.format(idx,index,path)
+        os.makedirs(heat_dir_path, exist_ok=True)
         # confidence = np.asarray(confidences[idx] * 255, dtype=np.uint8)
         confidence = decode(confidences[idx])
         confidence = np.reshape(confidence, (64, 64))
         image = Image.fromarray(confidence)
-        image.save('dataset/mpii/{2}/heatmap/{0}/{1}.png'.format(idx,index,path))
+        if os.path.isfile(heat_map_path):
+            org = Image.open(heat_map_path)
+            org = np.asarray(org)
+            image = np.maximum(org, image)
+
+        image.save(heat_map_path)
+
 
         if idx != 16:
-            os.makedirs('dataset/mpii/{1}/center_limb/{0}'.format(idx, path), exist_ok=True)
+            limb_dir_path = 'dataset/mpii/{1}/center_limb/{0}'.format(idx, path)
+            limb_map_path = 'dataset/mpii/{2}/center_limb/{0}/{1}.png'.format(idx,index, path)
+            os.makedirs(limb_dir_path, exist_ok=True)
             limb = decode(limbs[idx])
-            # limb = np.asarray(limbs[idx] * 255, dtype=np.uint8)
             limb = np.reshape(limb, (64, 64))
+            if os.path.isfile(limb_map_path):
+                org = Image.open(limb_map_path)
+                org = np.asarray(org)
+                limb = np.maximum(org, limb)
 
             image = Image.fromarray(limb)
-            image.save('dataset/mpii/{2}/center_limb/{0}/{1}.png'.format(idx,index, path))
+            image.save(limb_map_path)
 
 
 def flop_image(confidences,limbs):
@@ -366,6 +381,82 @@ def flop_points(points):
     reverse_points[12] = points[13]
     return reverse_points
 
+def data_generator(batch_size, shuffle=True, is_train=True):
+    base_path = root_path+train_path if is_train else root_path+validate_path
+    dirs = os.listdir(base_path+heat_map_path+'0')
+    if shuffle:
+        random.shuffle(dirs)
+    batch_iter = len(dirs)//batch_size
+    heat_map_len = len(os.listdir(base_path + heat_map_path))
+    limb_len = len(os.listdir(base_path + limb_path))
+    for idx in range(batch_iter):
+        # print(idx)
+        x = []
+        heat_maps = []
+        limbs = []
+
+        for b_i in range(batch_size):
+            file_name = dirs[idx*batch_size + b_i].split('.')[0]
+            img = Image.open(base_path+'\\input\\'+file_name+".png")
+            if img.mode == 'L':
+                continue
+            # print(img.mode, file_name)
+            img = img.resize((256,256))
+            img = np.asarray(img)/255.
+            img = np.moveaxis(img, 2, 0)
+            x.append(img)
+
+            heat_map_file_path = base_path + heat_map_path + '\\{}\\'.format(0) + file_name + ".png"
+            base_heat = np.asarray(Image.open(heat_map_file_path)) / 255.
+            base_heat = np.reshape(base_heat, (64,64,1))
+
+            for h in range(1, heat_map_len):
+                heat_map_file_path = base_path+heat_map_path+'\\{}\\'.format(h)+file_name+".png"
+                heat = np.asarray(Image.open(heat_map_file_path))/255.
+                heat = np.reshape(heat, (64,64,1))
+                base_heat = np.concatenate([base_heat, heat], axis=-1)
+
+            limb_map_file_path = base_path + limb_path + '\\{}\\'.format(0) + file_name + ".png"
+            base_limb = np.asarray(Image.open(limb_map_file_path)) / 255.
+            base_limb = np.reshape(base_limb, (64,64,1))
+            for l in range(1, limb_len):
+                limb_map_file_path = base_path+limb_path+'\\{}\\'.format(l)+file_name+".png"
+                limb = np.asarray(Image.open(limb_map_file_path))/255.
+                limb = np.reshape(limb, (64,64,1))
+                base_limb = np.concatenate([base_limb, limb], axis=-1)
+
+
+            base_heat = np.moveaxis(base_heat, 2, 0)
+            base_limb = np.moveaxis(base_limb, 2, 0)
+            heat_maps.append(base_heat)
+            limbs.append(base_limb)
+
+        x = np.asarray(x)
+        heat_maps = np.asarray(heat_maps)
+        limbs = np.asarray(limbs)
+        yield x, heat_maps, limbs
+
+def save_limb(values, path):
+    limb_gt = values[:,:,0]
+    for k in range(1, 16):
+        limb_gt = np.maximum(np.reshape(values[:, :, k], (64,64)), limb_gt)
+    limb_gt = decode(limb_gt)
+    # limb_gt = np.asarray(((limb_gt+1) * 127.5), dtype=np.uint8)
+    limb_gt = np.reshape(limb_gt, (64, 64))
+    image = Image.fromarray(limb_gt)
+    image.save(path)
+
+
+def save_heatmap(values, path):
+    gt = values[:,:,0]
+    for k in range(1, 17):
+        gt = np.maximum(np.reshape(values[ :, :, k], (64, 64)), gt)
+    gt = decode(gt)
+    # gt = np.asarray(((gt+1) * 125.), dtype=np.uint8)
+    gt = np.reshape(gt, (64, 64))
+    image = Image.fromarray(gt)
+    image.save(path)
+
 
 if __name__ == "__main__":
     save_joints()
@@ -384,15 +475,10 @@ if __name__ == "__main__":
 
     for image_path, person in tqdm.tqdm(zip(x, y)):
         image = Image.open(image_path)
-        idxes = image_path.split('\\')[-1].split('.')[0]+"0"
-        print(idxes)
+        file_name = image_path.split('/')[-1].split('.')[0]+"n"
 
         confidences = [np.zeros((64,64))for i in range(17)]
         limbs = [np.zeros((64,64))for i in range(16)]
-
-        # offset_base = np.zeros((64,64,2))
-
-        # save_point = []
 
         for points in person:
             width, height = image.size
@@ -400,15 +486,12 @@ if __name__ == "__main__":
             points[:, 0] = points[:, 0] * 64 // width
             points[:, 1] = points[:, 1] * 64 // height
             limb_idx = 0
-            radius = 3 + np.log2((np.max(points[:,0]) - np.min(points[:,0])) * (np.max(points[:,1]) - np.min(points[:,1])))
-            # if radius < 3:
-            #     radius = 3
-            limb_radius = np.sqrt(radius)
+            radius = 1.5
+            limb_radius = 3
 
             for idx, point in enumerate(points):
                 kernel = np.reshape(create_kernel(base_shape, (point[0], point[1]), radius=radius), (64,64))
                 confidences[idx] = np.maximum(confidences[idx], kernel)
-                # if idx != 9:
                 limbs[limb_idx] = np.maximum(limbs[limb_idx], np.reshape(draw_limb(idx,points, limb_radius), (64,64)))
                 limb_idx = limb_idx + 1
 
@@ -418,11 +501,10 @@ if __name__ == "__main__":
         # lines[idxes] = np.asarray(person).tolist()
 
         image = image.resize((256,256))
-        image.save('dataset/mpii/{1}/input/{0}.png'.format(idxes, path))
-
-        save_images(confidences,limbs,idxes, is_train)
-        save_image_total(limbs,idxes, is_train)
-        idxes = image_path.split('\\')[-1].split('.')[0]+"1"
+        image.save('dataset/mpii/{1}/input/{0}.png'.format(file_name, path))
+        save_images(confidences, limbs, file_name, is_train)
+        save_image_total(limbs, file_name, is_train)
+        idxes = image_path.split('/')[-1].split('.')[0]+"1"
         # idxes[-1] = "1"
 
         image = np.array(image)

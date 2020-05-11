@@ -207,26 +207,6 @@ def focal_loss1(y_true, y_pred):
     return -y_pred_sum / N
 
 
-def save_limb(values, path):
-    limb_gt = values[:,:,0]
-    for k in range(1, 16):
-        limb_gt = np.maximum(np.reshape(values[:, :, k], (64,64)), limb_gt)
-    limb_gt = decode(limb_gt)
-    # limb_gt = np.asarray(((limb_gt+1) * 127.5), dtype=np.uint8)
-    limb_gt = np.reshape(limb_gt, (64, 64))
-    image = Image.fromarray(limb_gt)
-    image.save(path)
-
-
-def save_heatmap(values, path):
-    gt = values[:,:,0]
-    for k in range(1, 17):
-        gt = np.maximum(np.reshape(values[ :, :, k], (64, 64)), gt)
-    gt = decode(gt)
-    # gt = np.asarray(((gt+1) * 125.), dtype=np.uint8)
-    gt = np.reshape(gt, (64, 64))
-    image = Image.fromarray(gt)
-    image.save(path)
 
 
 def create_train_test_set(ratio):
