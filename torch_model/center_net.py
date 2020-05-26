@@ -1,5 +1,6 @@
 from torch_model.layers import BottleNeckBlock, Hourglass
 import numpy as np
+import torch.functional as F
 from torch_model.losses import focal_loss
 import torch
 from torchvision import datasets, transforms
@@ -78,44 +79,55 @@ def center_loss(output, target):
     return focal_loss(o_limb, t_limb) + focal_loss(o_heat, t_heat)
 
 
+class CenterNet2(nn.Module):
 
+    def __init__(self, feature, output):
+        super(CenterNet2, self).__init__()
+        self.feature = feature
+        self.output = output
 
-class Test(nn.Module):
-    def __init__(self):
-        super(Test, self).__init__()
         self.__build__()
 
     def __build__(self):
-        self.front = nn.Conv2d(1,256,3,stride=1,padding=0)
-        self.conv=[nn.Conv2d(256,256,3,stride=1,padding=0) for _ in range(3)]
-        self.pooling = torch.nn.AdaptiveAvgPool2d((1,1))
-        self.linear_front = nn.Linear(256, 64)
-        self.last = nn.Linear(64, 10)
-        # self.m = nn.Softmax(dim=0)
+        feature = self.feature
+        self.conv7 = nn.Conv2d(3, feature, 3, stride=2, padding=1)
+        self.conv3 = nn.Conv2d(feature, feature, 3, stride=1, padding=1)
+        self.hour1 = Hourglass(feature, feature)
+
+        self.hour2 = Hourglass(feature, feature)
+        self.res1 = BottleNeckBlock(feature, feature, False)
+        self.res2 = BottleNeckBlock(feature, feature, False)
+        self.res3 = BottleNeckBlock(feature, feature, False)
+        self.heat_last_f = nn.Conv2d(feature, feature, 3, stride=1, padding=1)
+        self.heat_last = nn.Conv2d(feature, self.output[0], 1, stride=1, padding=0)
+
+        self.size_last_f = nn.Conv2d(feature, feature, 3, stride=1, padding=1)
+        self.size_last = nn.Conv2d(feature, self.output[1], 1, stride=1, padding=0)
+        self.batch1 = nn.BatchNorm2d(feature)
+        self.batch2 = nn.BatchNorm2d(feature)
+        self.batch3 = nn.BatchNorm2d(feature)
+        self.batch4 = nn.BatchNorm2d(feature)
+
+        self.max_pool = nn.MaxPool2d(3, stride=2, padding=1)
 
     def forward(self, x):
-        x = torch.selu(self.front(x))
-        for conv in self.conv:
-            x = torch.selu(conv(x))
+        x = torch.selu(self.batch1(self.conv7(x)))
+        x = self.max_pool(torch.selu(self.batch2(self.conv3(x))))
+        # init = x
+        x = self.hour1(x)
+        x = self.res1(x)
+        x = self.hour2(x)
+        res = self.res2(x)
+        res = self.res3(res)
 
-        x = self.pooling(x)
-        x = x.view(-1, 256)
+        heat = torch.selu(self.batch3(self.heat_last_f(res)))
+        heat = torch.sigmoid(self.heat_last(heat))
 
-        x = torch.selu(self.linear_front(x))
-        x = self.last(x)
-        return x
+        size = torch.selu(self.batch4(self.size_last_f(res)))
+        size = torch.sigmoid(self.size_last(size))
 
-    def cuda_adopt(self):
-        self.front = self.front.cuda()
-        self.pooling = self.pooling.cuda()
-        self.last = self.last.cuda()
-        self.linear_front = self.linear_front.cuda()
-        for i in range(len(self.conv)):
-            self.conv[i] = self.conv[i].cuda()
+        return heat, size
 
-        # self.m = self.m.cuda()
-
-        self = self.cuda()
 
 if __name__ == "__main__":
     trn_dataset = datasets.MNIST('../mnist_data/',
