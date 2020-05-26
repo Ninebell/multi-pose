@@ -284,6 +284,7 @@ if __name__ == "__main__":
     data_set_path = "D:\\{0}\\result".format('mpii')
 
     net = CenterNet(256, 3)
+    print(net)
 
     criterion = center_loss
 
