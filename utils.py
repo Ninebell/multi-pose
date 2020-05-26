@@ -381,6 +381,7 @@ def flop_points(points):
     reverse_points[12] = points[13]
     return reverse_points
 
+
 def data_generator(batch_size, shuffle=True, is_train=True):
     base_path = root_path+train_path if is_train else root_path+validate_path
     dirs = os.listdir(base_path+heat_map_path+'0')
