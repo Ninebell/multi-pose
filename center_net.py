@@ -1,4 +1,5 @@
 import torch
+import torch_model.center_net
 import torch.nn as nn
 import torch.nn.functional as F
 import os
@@ -283,15 +284,15 @@ if __name__ == "__main__":
 
     data_set_path = "D:\\{0}\\result".format('mpii')
 
-    net = CenterNet(256, 3)
-    print(net)
+    net = torch_model.center_net.CenterNet(256, [17, 16], [torch.sigmoid, torch.sigmoid])
 
     criterion = center_loss
 
     is_cuda = torch.cuda.is_available()
 
     if is_cuda:
-        net = net.cuda()
+        net.cuda_adopt()
+        # net = net.cuda()
 
     lr = 1e-4
 
@@ -300,7 +301,7 @@ if __name__ == "__main__":
 
     optim = torch.optim.Adam(net.parameters(), lr)
 
-    net.load_state_dict(torch.load( '{1}/{0}/model.dict'.format(38, data_set_path)))
+    # net.load_state_dict(torch.load( '{1}/{0}/model.dict'.format(38, data_set_path)))
 
     pytorch_total_params = sum(p.numel() for p in net.parameters())
 
