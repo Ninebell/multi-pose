@@ -17,13 +17,13 @@ def calc_dist(pt1, pt2):
     return np.sqrt(np.sum(np.square(np.asarray(pt1) - np.asarray(pt2))))
 
 
-def calc_maximum_energy(center, points, limb):
+def calc_energy(center, points, limb):
 
     energy = []
 
-    Image.fromarray(limb).show()
-    for idx, ct_point in enumerate(center):
-        for g_point in points:
+    for g_point in points:
+        pair = []
+        for idx, ct_point in enumerate(center):
             base = np.zeros((64,64))
             base = Image.fromarray(base)
             base_draw = ImageDraw.Draw(base)
@@ -31,25 +31,68 @@ def calc_maximum_energy(center, points, limb):
 
             # base.show()
             base = np.array(base)/255
-            Image.fromarray((base*limb/255)*255).show()
             value = np.sum(base * (limb/255)) / calc_dist(g_point, ct_point)
 
-            energy.append((idx, value))
+            pair.append((idx, value))
+        energy.append(pair)
+    return energy
 
 
-    print(energy)
+def find_max(energy, used, idx, value, history):
+    if idx == len(energy):
+        if find_max.max_value < value:
+            find_max.max_value = value
+            find_max.history = history.copy()
+
+    else:
+
+        for i in range(len(energy[idx])):
+            if not used[i]:
+                used[i] = True
+                history[idx] = i
+                find_max(energy, used, idx+1, value+energy[idx][i][1], history)
+                used[i] = False
+
+
+find_max.max_value = 0
+find_max.history = 0
 
 
 def make_pair(center, points, limbs):
+    center_idx = []
     for idx in range(len(points)):
-        calc_maximum_energy(center, points[idx], limbs[idx])
+        energy_info = calc_energy(center, points[idx], limbs[idx])
+        used = [False for _ in range(len(points[idx]))]
+        find_max.max_value = 0
+        find_max.history = []
+        find_max(energy_info, used, 0, 0, [0 for _ in range(len(points[idx]))])
+
+        center_idx.append(find_max.history)
+    return center_idx
+
+
+def result_draw(center, joints, indexing):
+
+    board = np.zeros((64,64,3),dtype=np.uint8)
+
+    img = Image.fromarray(board)
+    img_d = ImageDraw.Draw(img)
+
+    center_color = ['red', 'green']
+
+    for i, joint in enumerate(joints):
+        for j, point in enumerate(joint):
+            center_idx = indexing[i][j]
+            img_d.line((point[0], point[1], center[center_idx][0], center[center_idx][1]), width=1, fill=center_color[center_idx])
+
+    img.show()
 
 
 
 if __name__ == "__main__":
     test_file = "3.png"
-    sample_limb_path = "D:\\dataset\\mpii\\train\\limb_\\"
-    sample_heatmap_path = "D:\\dataset\\mpii\\train\\heatmap_\\"
+    sample_limb_path = "E:\\dataset\\mpii\\train\\limb_\\"
+    sample_heatmap_path = "E:\\dataset\\mpii\\train\\heatmap_\\"
     heat_maps = []
     limbs = []
     for i in range(0,17):
@@ -65,6 +108,8 @@ if __name__ == "__main__":
     for point in points:
         print(point)
 
-    make_pair(points[-1], points[:1], limbs)
+    center_idx = make_pair(points[-1], points[:-1], limbs)
+    print(center_idx)
+    result_draw(points[-1], points[:-1],center_idx)
 
 
