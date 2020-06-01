@@ -31,6 +31,26 @@ def encode(image):
     return np.asarray(image, dtype=np.float)/255.
 
 
+def get_test_set():
+
+    # joint_data_fn = 'dataset/mpii/data.json'
+    mat = loadmat('E:\\dataset\\mpii\\mpii_human_pose_v1_u12_1.mat')
+
+    file_name = []
+
+    for i, (anno, train_flag) in enumerate(
+        zip(mat['RELEASE']['annolist'][0, 0][0],
+            mat['RELEASE']['img_train'][0, 0][0])):
+
+        img_fn = anno['image']['name'][0, 0][0]
+        train_flag = int(train_flag)
+
+        if train_flag == 0:
+            file_name.append(img_fn)
+
+    return file_name
+
+
 def save_joints():
     joint_data_fn = 'dataset/mpii/data.json'
     mat = loadmat('E:\\dataset\\mpii\\mpii_human_pose_v1_u12_1.mat')
@@ -426,7 +446,6 @@ def data_generator(batch_size, shuffle=True, is_train=True):
                 limb = np.reshape(limb, (64,64,1))
                 base_limb = np.concatenate([base_limb, limb], axis=-1)
 
-
             base_heat = np.moveaxis(base_heat, 2, 0)
             base_limb = np.moveaxis(base_limb, 2, 0)
             heat_maps.append(base_heat)
@@ -436,6 +455,7 @@ def data_generator(batch_size, shuffle=True, is_train=True):
         heat_maps = np.asarray(heat_maps)
         limbs = np.asarray(limbs)
         yield x, heat_maps, limbs
+
 
 def save_limb(values, path):
     limb_gt = values[:,:,0]
@@ -459,7 +479,11 @@ def save_heatmap(values, path):
     image.save(path)
 
 
-if __name__ == "__main__":
+if __name__ =="__main__":
+    print(len(get_test_set()))
+
+
+if __name__ == "__main__3":
     save_joints()
     split_train_test()
     is_train = True
