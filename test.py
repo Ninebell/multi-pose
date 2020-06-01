@@ -107,7 +107,6 @@ def result_draw(center, joints, indexing):
 
     return np.array(img)
 
-
 if __name__ == "__main__2":
     root_path = 'E:\\dataset\\mpii\\train\\input\\'
     heat_path = 'E:\\dataset\\mpii\\train\\heatmap_\\'
@@ -205,5 +204,6 @@ if __name__ == "__main__":
             cv2_arr = cv2.cvtColor(cv2_arr, cv2.COLOR_RGB2BGR)
             cv2.imshow("blended", cv2_arr)
             plt.show()
+
 
 
