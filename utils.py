@@ -30,7 +30,6 @@ def decode(image):
 def encode(image):
     return np.asarray(image, dtype=np.float)/255.
 
-
 def get_test_set():
 
     # joint_data_fn = 'dataset/mpii/data.json'
