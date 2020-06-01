@@ -88,11 +88,10 @@ def result_draw(center, joints, indexing):
     img.show()
 
 
-
 if __name__ == "__main__":
     test_file = "3.png"
-    sample_limb_path = "E:\\dataset\\mpii\\train\\limb_\\"
-    sample_heatmap_path = "E:\\dataset\\mpii\\train\\heatmap_\\"
+    sample_limb_path = "D:\\dataset\\mpii\\train\\limb_\\"
+    sample_heatmap_path = "D:\\dataset\\mpii\\train\\heatmap_\\"
     heat_maps = []
     limbs = []
     for i in range(0,17):
@@ -111,5 +110,6 @@ if __name__ == "__main__":
     center_idx = make_pair(points[-1], points[:-1], limbs)
     print(center_idx)
     result_draw(points[-1], points[:-1],center_idx)
+
 
 
