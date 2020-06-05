@@ -79,6 +79,48 @@ def center_loss(output, target):
     return focal_loss(o_limb, t_limb) + focal_loss(o_heat, t_heat)
 
 
+
+
+class Test(nn.Module):
+    def __init__(self):
+        super(Test, self).__init__()
+        self.__build__()
+
+    def __build__(self):
+        self.front = nn.Conv2d(1,256,3,stride=1,padding=0)
+        self.conv=[nn.Conv2d(256,256,3,stride=1,padding=0) for _ in range(3)]
+        self.pooling = torch.nn.AdaptiveAvgPool2d((1,1))
+        self.linear_front = nn.Linear(256, 64)
+        self.last = nn.Linear(64, 10)
+        # self.m = nn.Softmax(dim=0)
+
+    def forward(self, x):
+        x = torch.selu(self.front(x))
+        for conv in self.conv:
+            x = torch.selu(conv(x))
+
+        x = self.pooling(x)
+        x = x.view(-1, 256)
+
+        x = torch.selu(self.linear_front(x))
+        x = self.last(x)
+        return x
+
+    def cuda_adopt(self):
+        self.front = self.front.cuda()
+        self.pooling = self.pooling.cuda()
+        self.last = self.last.cuda()
+        self.linear_front = self.linear_front.cuda()
+        for i in range(len(self.conv)):
+            self.conv[i] = self.conv[i].cuda()
+
+        # self.m = self.m.cuda()
+
+        self = self.cuda()
+
+
+
+
 class CenterNet2(nn.Module):
 
     def __init__(self, feature, output):
@@ -94,15 +136,19 @@ class CenterNet2(nn.Module):
         self.conv3 = nn.Conv2d(feature, feature, 3, stride=1, padding=1)
         self.hour1 = Hourglass(feature, feature)
 
-        self.hour2 = Hourglass(feature, feature)
-        self.res1 = BottleNeckBlock(feature, feature, False)
-        self.res2 = BottleNeckBlock(feature, feature, False)
-        self.res3 = BottleNeckBlock(feature, feature, False)
-        self.heat_last_f = nn.Conv2d(feature, feature, 3, stride=1, padding=1)
-        self.heat_last = nn.Conv2d(feature, self.output[0], 1, stride=1, padding=0)
+        self.res1 = BottleNeckBlock(feature, feature, True)
+        self.res11 = BottleNeckBlock(feature, feature, True)
 
-        self.size_last_f = nn.Conv2d(feature, feature, 3, stride=1, padding=1)
-        self.size_last = nn.Conv2d(feature, self.output[1], 1, stride=1, padding=0)
+        self.inter_result = nn.Conv2d(feature, self.output, 1, stride=1, padding=0)
+        self.res_result = BottleNeckBlock(self.output, feature, False)
+
+        self.hour2 = Hourglass(feature, feature)
+        self.res2 = BottleNeckBlock(feature, feature, True)
+        self.res3 = BottleNeckBlock(feature, feature, True)
+
+        self.output_f = nn.Conv2d(feature, feature, 3, stride=1, padding=1)
+        self.output_l = nn.Conv2d(feature, self.output, 1, stride=1, padding=0)
+
         self.batch1 = nn.BatchNorm2d(feature)
         self.batch2 = nn.BatchNorm2d(feature)
         self.batch3 = nn.BatchNorm2d(feature)
@@ -113,20 +159,26 @@ class CenterNet2(nn.Module):
     def forward(self, x):
         x = torch.selu(self.batch1(self.conv7(x)))
         x = self.max_pool(torch.selu(self.batch2(self.conv3(x))))
-        # init = x
+        init = x
+
         x = self.hour1(x)
         x = self.res1(x)
+        inter_out = torch.sigmoid(self.inter_result(x))
+
+        inter_out_next = torch.selu(self.batch3(self.res_result(inter_out)))
+
+        x = self.res11(x)
+
+        x = init + x + inter_out_next
+
         x = self.hour2(x)
         res = self.res2(x)
         res = self.res3(res)
 
-        heat = torch.selu(self.batch3(self.heat_last_f(res)))
-        heat = torch.sigmoid(self.heat_last(heat))
+        out = torch.selu(self.batch4(self.output_f(res)))
+        out = torch.sigmoid(self.output_l(out))
 
-        size = torch.selu(self.batch4(self.size_last_f(res)))
-        size = torch.sigmoid(self.size_last(size))
-
-        return heat, size
+        return inter_out, out
 
 
 if __name__ == "__main__":

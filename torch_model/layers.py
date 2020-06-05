@@ -3,6 +3,11 @@ import torch.nn.functional as F
 import torch
 
 
+class ChannelPool(nn.Module):
+    def forward(self, x):
+        return torch.cat( (torch.max(x,1)[0].unsqueeze(1), torch.mean(x,1).unsqueeze(1)), dim=1 )
+
+
 class AttentionBlock(nn.Module):
     def __init__(self, feature, ratio):
         super(AttentionBlock, self).__init__()
@@ -14,10 +19,14 @@ class AttentionBlock(nn.Module):
         self.g_avg_pool = nn.AdaptiveAvgPool2d((1, 1))
         self.g_max_pool = nn.AdaptiveMaxPool2d((1, 1))
 
-        self.sp_w0 = nn.Conv2d(feature*2, feature, 3, stride=1, padding=1)
-        self.sp_w1 = nn.Conv2d(feature, feature, 3, stride=1, padding=1)
-        self.avg_pool = nn.AvgPool2d(3, stride=1, padding=1)
-        self.max_pool = nn.MaxPool2d(3, stride=1, padding=1)
+        self.compress = ChannelPool()
+        # self.spatial = BasicConv(2, 1, kernel_size, stride=1, padding=(kernel_size-1) // 2, relu=False)
+        self.sp_w0 = nn.Conv2d(2, 1, 7, stride=1, padding=6//2)
+
+        # self.sp_w0 = nn.Conv2d(feature*2, feature, 3, stride=1, padding=1)
+        # self.sp_w1 = nn.Conv2d(feature, feature, 3, stride=1, padding=1)
+        # self.avg_pool = nn.AvgPool2d(3, stride=1, padding=1)
+        # self.max_pool = nn.MaxPool2d(3, stride=1, padding=1)
 
     def __channel_forward__(self, x):
         def __chanel_attention__(ch_input):
@@ -34,12 +43,10 @@ class AttentionBlock(nn.Module):
         return ch_attention
 
     def __spatial_forward__(self, x):
-        sp_avg = self.avg_pool(x)
-        sp_max = self.max_pool(x)
-        sp_conv = torch.cat((sp_avg, sp_max), 1)
-        sp_conv = self.sp_w0(sp_conv)
-        sp_conv = self.sp_w1(sp_conv)
-        sp_attention = torch.sigmoid(sp_conv)
+        x_compress = self.compress(x)
+        x_out = self.sp_w0(x_compress)
+        scale = F.sigmoid(x_out)  # broadcasting
+        return x * scale
 
         return sp_attention
 
@@ -107,26 +114,26 @@ class Hourglass(nn.Module):
         i_f = self.input_feature
         o_f = self.output_feature
 
-        self.down1 = BottleNeckBlock(i_f, o_f, False)
-        self.down2 = BottleNeckBlock(o_f, o_f, False)
-        self.down3 = BottleNeckBlock(o_f, o_f, False)
-        self.down4 = BottleNeckBlock(o_f, o_f, False)
-        self.down5 = BottleNeckBlock(o_f, o_f, False)
+        self.down1 = BottleNeckBlock(i_f, o_f, True)
+        self.down2 = BottleNeckBlock(o_f, o_f, True)
+        self.down3 = BottleNeckBlock(o_f, o_f, True)
+        self.down4 = BottleNeckBlock(o_f, o_f, True)
+        self.down5 = BottleNeckBlock(o_f, o_f, True)
 
         self.skip1 = BottleNeckBlock(o_f, o_f, True)
         self.skip2 = BottleNeckBlock(o_f, o_f, True)
         self.skip3 = BottleNeckBlock(o_f, o_f, True)
         self.skip4 = BottleNeckBlock(o_f, o_f, True)
 
-        self.middle1 = BottleNeckBlock(o_f, o_f, False)
-        self.middle2 = BottleNeckBlock(o_f, o_f, False)
-        self.middle3 = BottleNeckBlock(o_f, o_f, False)
+        self.middle1 = BottleNeckBlock(o_f, o_f, True)
+        self.middle2 = BottleNeckBlock(o_f, o_f, True)
+        self.middle3 = BottleNeckBlock(o_f, o_f, True)
 
-        self.up1 = BottleNeckBlock(i_f, o_f, False)
-        self.up2 = BottleNeckBlock(o_f, o_f, False)
-        self.up3 = BottleNeckBlock(o_f, o_f, False)
-        self.up4 = BottleNeckBlock(o_f, o_f, False)
-        self.up5 = BottleNeckBlock(o_f, o_f, False)
+        self.up1 = BottleNeckBlock(i_f, o_f, True)
+        self.up2 = BottleNeckBlock(o_f, o_f, True)
+        self.up3 = BottleNeckBlock(o_f, o_f, True)
+        self.up4 = BottleNeckBlock(o_f, o_f, True)
+        self.up5 = BottleNeckBlock(o_f, o_f, True)
 
         self.max_pool = nn.MaxPool2d(3, stride=2, padding=1)
 
