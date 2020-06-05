@@ -113,10 +113,10 @@ class Hourglass(nn.Module):
         self.down4 = BottleNeckBlock(o_f, o_f, False)
         self.down5 = BottleNeckBlock(o_f, o_f, False)
 
-        self.skip1 = BottleNeckBlock(o_f, o_f, True)
-        self.skip2 = BottleNeckBlock(o_f, o_f, True)
-        self.skip3 = BottleNeckBlock(o_f, o_f, True)
-        self.skip4 = BottleNeckBlock(o_f, o_f, True)
+        self.skip1 = BottleNeckBlock(o_f, o_f, False)
+        self.skip2 = BottleNeckBlock(o_f, o_f, False)
+        self.skip3 = BottleNeckBlock(o_f, o_f, False)
+        self.skip4 = BottleNeckBlock(o_f, o_f, False)
 
         self.middle1 = BottleNeckBlock(o_f, o_f, False)
         self.middle2 = BottleNeckBlock(o_f, o_f, False)

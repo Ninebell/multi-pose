@@ -11,24 +11,26 @@ from torch_model.losses import focal_loss
 from utils import data_generator, save_heatmap, save_limb
 
 
-def center_loss(output, target):
+def center_loss(output, target, sub_loss):
     o_heat = output[0]
     o_size = output[1]
     t_heat = torch.from_numpy(target[0]).type(torch.FloatTensor).cuda()
     t_size = torch.from_numpy(target[1]).type(torch.FloatTensor).cuda()
 
+    limb_loss = sub_loss(o_size, t_size)
+
     point_fl = focal_loss(o_heat, t_heat)
-    limb_fl = focal_loss(o_size, t_size)
+    # limb_fl = focal_loss(o_size, t_size)
 
     # sz = size_loss(o_size, t_size, t_heat)
-    return point_fl + limb_fl
+    return point_fl + limb_loss
 
 
 if __name__ == "__main__":
     epoches = 1000
     min_loss = 10000
 
-    data_set_path = "E:\\dataset\\{0}\\result".format(conf.data_set_name)
+    data_set_path = "D:\\dataset\\{0}\\result".format(conf.data_set_name)
 
     # net = torch_model.center_net.CenterNet(256, [17, 16], [torch.sigmoid, torch.sigmoid])
     net = torch_model.center_net.CenterNet2(256, [17, 16])
@@ -48,26 +50,28 @@ if __name__ == "__main__":
 
     optim = torch.optim.Adam(net.parameters(), lr)
 
-    # net.load_state_dict(torch.load( '{1}/{0}/model.dict'.format(38, data_set_path)))
+    net.load_state_dict(torch.load('{1}/{0}/model_1036.44.dict'.format(35, data_set_path)))
 
     pytorch_total_params = sum(p.numel() for p in net.parameters())
 
     print(pytorch_total_params)
 
-    epoch = 0
+    sub_loss = torch.nn.MSELoss()
+
+    epoch = 35
     # for epoch in range(1, epoches):
     while True:
         epoch = epoch+1
         iou_count = 0
         epoch_loss = 0
-        for data in tqdm(data_generator(16, shuffle=True, is_train=True)):
+        for data in tqdm(data_generator(8, shuffle=True, is_train=True)):
             x, heat, limb = data
             if is_cuda:
                 x = torch.from_numpy(x).type(torch.FloatTensor).cuda()
 
             optim.zero_grad()
             result = net(x)
-            loss = criterion(result, [heat, limb])
+            loss = criterion(result, [heat, limb], sub_loss)
             loss.backward()
             epoch_loss += loss.item()
 
@@ -80,7 +84,7 @@ if __name__ == "__main__":
         os.makedirs('{1}/{0}'.format(epoch, data_set_path),exist_ok=True)
         # if min_loss > epoch_loss:
         min_loss = epoch_loss
-        torch.save(net.state_dict(), '{1}/{0}/model.dict'.format(epoch, data_set_path))
+        torch.save(net.state_dict(), '{1}/{0}/model_{2:.2f}.dict'.format(epoch, data_set_path,epoch_loss))
 
         with torch.no_grad():
             for idx, value in enumerate(data_generator(batch_size=1, shuffle=False, is_train=False)):

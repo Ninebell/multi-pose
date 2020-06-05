@@ -95,9 +95,9 @@ class CenterNet2(nn.Module):
         self.hour1 = Hourglass(feature, feature)
 
         self.hour2 = Hourglass(feature, feature)
-        self.res1 = BottleNeckBlock(feature, feature, False)
-        self.res2 = BottleNeckBlock(feature, feature, False)
-        self.res3 = BottleNeckBlock(feature, feature, False)
+        self.res1 = BottleNeckBlock(feature, feature, True)
+        self.res2 = BottleNeckBlock(feature, feature, True)
+        self.res3 = BottleNeckBlock(feature, feature, True)
         self.heat_last_f = nn.Conv2d(feature, feature, 3, stride=1, padding=1)
         self.heat_last = nn.Conv2d(feature, self.output[0], 1, stride=1, padding=0)
 
