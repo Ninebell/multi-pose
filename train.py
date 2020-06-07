@@ -129,7 +129,7 @@ def get_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument('--repeat', '-r', nargs='+', help='hourglass count', default=[2], dest='repeat', type=int)
     parser.add_argument('--nstack', '-n', nargs='+', help='hourglass layer count', default=[3], dest='n_stack', type=int)
-    parser.add_argument('--save', '-s', nargs='+', help='save path', default=[data_set_path], dest='save_path', type=int)
+    parser.add_argument('--save', '-s', nargs='+', help='save path', default=[data_set_path], dest='save_path')
     parser.add_argument('--epoch', '-e', nargs='+', help='epoch count', default=[200], dest='epoch', type=int)
     parser.add_argument('--batch', '-b', nargs='+', help='batch size', default=[8], dest='batch_size', type=int)
 
