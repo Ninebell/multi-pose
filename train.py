@@ -116,9 +116,9 @@ def _main(epoches, batch_size, repeat, n_layer, save_path):
         epoch_loss /= iter_count
         sch.step()
         print('\n', epoch, epoch_loss, '\n')
-        save_path = '{0}/{1}_{2:4d}/'.format(save_path, epoch, int(epoch_loss*100))
+        save_path = '{0}\\{1}_{2:4d}\\'.format(save_path, epoch, int(epoch_loss*100))
         os.makedirs(save_path, exist_ok=True)
-        torch.save(net.state_dict(), save_path)
+        torch.save(net.state_dict(), '{0}\\model.dict'.format(save_path))
         if min_loss is None or min_loss > epoch_loss:
             min_loss = epoch_loss
         test_model(net, data_generator, 50, save_path)
