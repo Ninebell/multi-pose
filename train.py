@@ -127,11 +127,11 @@ def _main(epoches, batch_size, repeat, n_layer, save_path):
 def get_arguments():
     data_set_path = "D:\\dataset\\{0}\\result".format(conf.data_set_name)
     parser = argparse.ArgumentParser()
-    parser.add_argument('--repeat', '-r', nargs='+', help='hourglass count', default=[2], dest='repeat')
-    parser.add_argument('--nstack', '-n', nargs='+', help='hourglass layer count', default=[3], dest='n_stack')
-    parser.add_argument('--save', '-s', nargs='+', help='save path', default=[data_set_path], dest='save_path')
-    parser.add_argument('--epoch', '-e', nargs='+', help='epoch count', default=[200], dest='epoch')
-    parser.add_argument('--batch', '-b', nargs='+', help='batch size', default=[8], dest='batch_size')
+    parser.add_argument('--repeat', '-r', nargs='+', help='hourglass count', default=[2], dest='repeat', type=int)
+    parser.add_argument('--nstack', '-n', nargs='+', help='hourglass layer count', default=[3], dest='n_stack', type=int)
+    parser.add_argument('--save', '-s', nargs='+', help='save path', default=[data_set_path], dest='save_path', type=int)
+    parser.add_argument('--epoch', '-e', nargs='+', help='epoch count', default=[200], dest='epoch', type=int)
+    parser.add_argument('--batch', '-b', nargs='+', help='batch size', default=[8], dest='batch_size', type=int)
 
     repeat = parser.parse_args().repeat
     n_stack = parser.parse_args().n_stack
