@@ -1,5 +1,6 @@
 from time import sleep
 import os
+import argparse
 
 from tqdm import tqdm
 import numpy as np
@@ -7,120 +8,142 @@ import torch
 
 import conf
 import torch_model.center_net
+
 from torch_model.losses import focal_loss
 from utils import data_generator, save_heatmap, save_limb
 
 
 def center_loss(output, target):
     o_heat = output[0]
-    o_size = output[1]
-    t_heat = torch.from_numpy(target[0]).type(torch.FloatTensor).cuda()
-    t_size = torch.from_numpy(target[1]).type(torch.FloatTensor).cuda()
-
-    o_heat_2 = output[2]
-    o_size_2 = output[3]
-    t_heat_2 = torch.from_numpy(target[0]).type(torch.FloatTensor).cuda()
-    t_size_2 = torch.from_numpy(target[1]).type(torch.FloatTensor).cuda()
+    o_limb = output[1]
+    t_heat = target[0]
+    t_limb = target[1]
 
     point_fl = focal_loss(o_heat, t_heat)
-    limb_fl = focal_loss(o_size, t_size)
+    limb_fl = focal_loss(o_limb, t_limb)
 
-    point_fl_2 = focal_loss(o_heat_2, t_heat_2)
-    limb_fl_2 = focal_loss(o_size_2, t_size_2)
-    # sz = size_loss(o_size, t_size, t_heat)
-    return point_fl + limb_fl + point_fl_2 + limb_fl_2
+    # sz = limb_loss(o_limb, t_size, t_heat)
+
+    return point_fl + limb_fl
 
 
-if __name__ == "__main__":
-    epoches = 1000
-    min_loss = 10000
+def train_model(net, optim, criterion, batch_size, is_cuda=True):
+    iter_count = 0
+    epoch_loss = 0
+    repeat = net.n_stack
+    for data in tqdm(data_generator(batch_size, shuffle=True, is_train=True)):
+        iter_count += 1
+        x, heat, limb = data
+        optim.zero_grad()
+        if is_cuda:
 
-    data_set_path = "E:\\dataset\\{0}\\result".format(conf.data_set_name)
+            tmp = [0 for i in range(repeat * 2)]
+            target = [0 for i in range(repeat)]
+            for i in range(repeat):
+                tmp[i * 2] = heat.copy()
+                tmp[i * 2 + 1] = limb.copy()
 
-    # net = torch_model.center_net.CenterNet(256, [17, 16], [torch.sigmoid, torch.sigmoid])
-    net = torch_model.center_net.CenterNet2(256, 33)
+            for i in range(repeat):
+                target[i] = np.concatenate([tmp[i * 2], tmp[i * 2 + 1]], axis=1)
 
-    criterion = torch.nn.MSELoss()
+            target = np.asarray([tar for tar in target])
+            target = torch.from_numpy(target).type(torch.FloatTensor).cuda(non_blocking=True)
+            x = torch.from_numpy(x).type(torch.FloatTensor).cuda(non_blocking=True)
+
+        result = net(x)
+
+        loss = 0
+        for i in range(repeat):
+            inter_loss = criterion(result[i], target[i])
+            loss += inter_loss
+        loss.backward()
+        epoch_loss += loss.item()
+        optim.step()
+    return epoch_loss, iter_count
+
+
+def test_model(net, data_generator, limit, path, is_cuda=True):
+    with torch.no_grad():
+        for idx, value in enumerate(data_generator(batch_size=1, shuffle=False, is_train=False)):
+            if True:
+                if idx > limit:
+                    break
+                x, heat, limb = value
+                heat_map = np.moveaxis(heat[0, :, :, :], 0, 2)
+                save_heatmap(heat_map, '{0}/heatmap_gt_{1}.png'.format(path, idx))
+                limb_map = np.moveaxis(limb[0, :, :, :], 0, 2)
+                save_limb(limb_map, '{0}/limb_gt_{1}.png'.format(path, idx))
+
+                if is_cuda:
+                    x = torch.from_numpy(x).type(torch.FloatTensor).cuda()
+                result = net(x)
+                heat_map_result = np.moveaxis(result[1][0, 0:17, :, :].cpu().numpy(), 0, 2)
+                limb_map_result = np.moveaxis(result[1][0, 17:, :, :].cpu().numpy(), 0, 2)
+                save_heatmap(heat_map_result, '{0}/heatmap_{1}.png'.format(path, idx))
+                save_limb(limb_map_result, '{0}/limb{1}.png'.format(path, idx))
+
+
+def print_train_info(epoch, batch_size):
+    print()
+    print("{0:^40s}".format('Train Information'))
+    print("{0:^40s}".format("{0:22s}: {1:10,d}".format('epoch', epoch)))
+    print("{0:^40s}".format("{0:22s}: {1:10,d}".format('batch size', batch_size)))
+    print("{0:^40s}".format("{0:22s}: {1:10,d}".format('input data', conf.get_train_data_num())))
+
+
+def _main(epoches, batch_size, repeat, n_layer, save_path):
+    min_loss = None
+
+    net = torch_model.center_net.CenterNet(256, 33, out_activation=torch.sigmoid,n_layer=n_layer, n_stack=repeat)
+    net.info()
+    print_train_info(epoches, batch_size)
+
+    criterion = center_loss
 
     is_cuda = torch.cuda.is_available()
 
     if is_cuda:
-        # net.cuda_adopt()
         net = net.cuda()
 
-    lr = 1e-3
-
-    losses = []
-    ioues = []
+    lr = 1e-4
 
     optim = torch.optim.Adam(net.parameters(), lr)
 
-    # net.load_state_dict(torch.load( '{1}/{0}/model.dict'.format(17, data_set_path)))
+    sch = torch.optim.lr_scheduler.StepLR(optim, 50)
 
-    pytorch_total_params = sum(p.numel() for p in net.parameters())
+    for epoch in range(1, epoches):
+        epoch_loss, iter_count = train_model(net, optim, criterion, batch_size)
+        epoch_loss /= iter_count
+        sch.step()
+        print('\n', epoch, epoch_loss, '\n')
+        save_path = '{0}/{1}_{2:4d}/'.format(save_path, epoch, int(epoch_loss*100))
+        os.makedirs(save_path, exist_ok=True)
+        torch.save(net.state_dict(), save_path)
+        if min_loss is None or min_loss > epoch_loss:
+            min_loss = epoch_loss
+        test_model(net, data_generator, 50, save_path)
 
-    print(pytorch_total_params)
 
-    sch = torch.optim.lr_scheduler.StepLR(optim, 150)
+def get_arguments():
+    data_set_path = "D:\\dataset\\{0}\\result".format(conf.data_set_name)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--repeat', '-r', nargs='+', help='hourglass count', default=2, dest='repeat')
+    parser.add_argument('--nstack', '-n', nargs='+', help='hourglass layer count', default=3, dest='n_stack')
+    parser.add_argument('--save', '-s', nargs='+', help='save path', default=data_set_path, dest='save_path')
+    parser.add_argument('--epoch', '-e', nargs='+', help='epoch count', default=200, dest='epoch')
+    parser.add_argument('--batch', '-b', nargs='+', help='batch size', default=8, dest='batch_size')
 
-    epoch = 0
-    # for epoch in range(1, epoches):
-    while True:
-        epoch = epoch+1
-        iou_count = 0
-        epoch_loss = 0
-        for data in tqdm(data_generator(8, shuffle=True, is_train=True)):
-            x, heat, limb = data
-            optim.zero_grad()
-            if is_cuda:
-                target = [0 for i in range(4)]
+    repeat = parser.parse_args().repeat
+    n_stack = parser.parse_args().n_stack
+    save_path = parser.parse_args().save_path
+    epoch = parser.parse_args().epoch
+    batch_size = parser.parse_args().batch_size
 
-                target[0] = heat.copy()
-                target[1] = limb.copy()
-                target[2] = heat.copy()
-                target[3] = limb.copy()
+    return epoch, batch_size, repeat, n_stack, save_path
 
-                # inter = target[0]
-                inter = np.concatenate([target[0], target[1]],axis=1)
-                final = np.concatenate([target[2], target[3]],axis=1)
-                target = np.asarray([inter,final])
-                # target = np.asarray(target)
-                target = torch.from_numpy(target).type(torch.FloatTensor).cuda()
-                x = torch.from_numpy(x).type(torch.FloatTensor).cuda()
 
-            result = net(x)
-            inter_loss = criterion(result[0], target[0])
-            loss = criterion(result[1], target[1])
-            loss = inter_loss + loss
-            loss.backward()
-            epoch_loss += loss.item()
-            optim.step()
-            # sch.step()
+if __name__ == "__main__":
+    epoch, batch_size, repeat, n_stack, save_path = get_arguments()
 
-        print(epoch, epoch_loss)
-        # losses.append(loss.item())
-        sleep(0.1)
-
-        os.makedirs('{1}/{0}'.format(epoch, data_set_path),exist_ok=True)
-        # if min_loss > epoch_loss:
-        min_loss = epoch_loss
-        torch.save(net.state_dict(), '{1}/{0}/model.dict'.format(epoch, data_set_path))
-
-        with torch.no_grad():
-            for idx, value in enumerate(data_generator(batch_size=1, shuffle=False, is_train=False)):
-                if True:
-                    if idx > 50:
-                        break
-                    x, heat, limb = value
-                    heat_map = np.moveaxis(heat[0,:,:,:],0,2)
-                    save_heatmap(heat_map, '{2}/{0}/heatmap_gt_{1}.png'.format(epoch, idx, data_set_path))
-                    save_limb(np.moveaxis(limb[0,:,:,:],0,2), '{2}/{0}/limb_gt_{1}.png'.format(epoch, idx, data_set_path))
-
-                    if is_cuda:
-                        x = torch.from_numpy(x).type(torch.FloatTensor).cuda()
-                    result = net(x)
-                    heat_map_result = np.moveaxis(result[1][0,0:17,:,:].cpu().numpy(),0, 2)
-                    limb_map_result = np.moveaxis(result[1][0,17:,:,:].cpu().numpy(),0, 2)
-                    save_heatmap(heat_map_result, '{2}/{0}/heatmap_{1}.png'.format(epoch, idx, data_set_path))
-                    save_limb(limb_map_result, '{2}/{0}/limb{1}.png'.format(epoch, idx, data_set_path))
+    _main(epoch, batch_size, repeat, n_stack, save_path)
 
