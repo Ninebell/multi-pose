@@ -27,13 +27,15 @@ base_shape_3 = (64,64,3)
 def decode(image):
     return np.asarray(image * 255, dtype=np.uint8)
 
+
 def encode(image):
     return np.asarray(image, dtype=np.float)/255.
+
 
 def get_test_set():
 
     # joint_data_fn = 'dataset/mpii/data.json'
-    mat = loadmat('E:\\dataset\\mpii\\mpii_human_pose_v1_u12_1.mat')
+    mat = loadmat('D:\\dataset\\mpii\\mpii_human_pose_v1_u12_1.mat')
 
     file_name = []
 
