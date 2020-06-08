@@ -91,7 +91,7 @@ def print_train_info(epoch, batch_size):
     print("{0:^40s}".format("{0:22s}: {1:10,d}".format('input data', conf.get_train_data_num())))
 
 
-def _main(epoches, batch_size, repeat, n_layer, save_path):
+def _main(epoches, batch_size, repeat, n_layer, save_root_path, pretrain):
     min_loss = None
 
     net = torch_model.center_net.CenterNet(256, 33, out_activation=torch.sigmoid,n_layer=n_layer, n_stack=repeat)
@@ -107,6 +107,9 @@ def _main(epoches, batch_size, repeat, n_layer, save_path):
 
     lr = 1e-4
 
+    if pretrain is not None:
+        net.load_state_dict(torch.load(pretrain))
+
     optim = torch.optim.Adam(net.parameters(), lr)
 
     sch = torch.optim.lr_scheduler.StepLR(optim, 50)
@@ -116,7 +119,7 @@ def _main(epoches, batch_size, repeat, n_layer, save_path):
         epoch_loss /= iter_count
         sch.step()
         print('\n', epoch, epoch_loss, '\n')
-        save_path = '{0}\\{1}_{2:4d}\\'.format(save_path, epoch, int(epoch_loss*100))
+        save_path = '{0}\\{1}_{2:4d}\\'.format(save_root_path, epoch, int(epoch_loss*100))
         os.makedirs(save_path, exist_ok=True)
         torch.save(net.state_dict(), '{0}\\model.dict'.format(save_path))
         if min_loss is None or min_loss > epoch_loss:
@@ -132,17 +135,19 @@ def get_arguments():
     parser.add_argument('--save', '-s', nargs='+', help='save path', default=[data_set_path], dest='save_path')
     parser.add_argument('--epoch', '-e', nargs='+', help='epoch count', default=[200], dest='epoch', type=int)
     parser.add_argument('--batch', '-b', nargs='+', help='batch size', default=[8], dest='batch_size', type=int)
+    parser.add_argument('--pretrain', '-p', nargs='+', help='pretrain model', default=[None], dest='pretrain')
 
     repeat = parser.parse_args().repeat
     n_stack = parser.parse_args().n_stack
     save_path = parser.parse_args().save_path
     epoch = parser.parse_args().epoch
     batch_size = parser.parse_args().batch_size
+    pretrain = parser.parse_args().pretrain
 
-    return epoch[0], batch_size[0], repeat[0], n_stack[0], save_path[0]
+    return epoch[0], batch_size[0], repeat[0], n_stack[0], save_path[0], pretrain[0]
 
 
 if __name__ == "__main__":
-    epoch, batch_size, repeat, n_stack, save_path = get_arguments()
-    _main(epoch, batch_size, repeat, n_stack, save_path)
+    epoch, batch_size, repeat, n_stack, save_path, pretrain = get_arguments()
+    _main(epoch, batch_size, repeat, n_stack, save_path, pretrain)
 
