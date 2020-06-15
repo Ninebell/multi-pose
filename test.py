@@ -83,6 +83,29 @@ def make_pair(center, points, limbs):
     return center_idx
 
 
+def upper(idx):
+    upper_joint = {
+            0: 1,
+            1: 2,
+            2: 6,
+
+            3: 6,
+            4: 3,
+            5: 4,
+            6: 7,
+            7: 8,
+            8: 9,
+            9: 9,
+            10: 11,
+            11: 12,
+            12: 8,
+            13: 8,
+            14: 13,
+            15: 14,
+    }
+    return upper_joint[idx]
+
+
 def result_draw(center, joints, indexing):
 
     board = np.zeros((256,256,3),dtype=np.uint8)
@@ -91,8 +114,12 @@ def result_draw(center, joints, indexing):
     img_d = ImageDraw.Draw(img)
 
     center_color = []
+    center_group = []
+    center_point_group = []
     for i in range(len(center)):
+        center_group.append([None for j in range(17)])
         center_color.append((random.randint(0,255), random.randint(0,255), random.randint(0,255)))
+        center_point_group.append((random.randint(0,255), random.randint(0,255), random.randint(0,255)))
 
     for i, joint in enumerate(joints):
         for j, point in enumerate(joint):
@@ -101,16 +128,28 @@ def result_draw(center, joints, indexing):
                 if center_idx == -1:
                     continue
 
-                img_d.line((point[0]*4, point[1]*4, center[center_idx][0]*4, center[center_idx][1]*4), width=2, fill=center_color[center_idx])
+                center_group[center_idx][i]=[point]
             except:
                 continue
 
+    for i in range(len(center)):
+        for j in range(len(center_group[i])):
+            if center_group[i][j] is not None:
+                img_d.ellipse((point[0]*4-5, point[1]*4-5, point[0]*4+5,point[1]*4+5), fill=center_point_group[i])
+                # img_d.point((point[0]*4, point[1]*4), fill=center_point_group[i])
+                point = center_group[i][j][0]
+                upper_idx = upper(j)
+                upper_joint = center_group[i][upper_idx]
+                if upper_joint is not None:
+                    img_d.line((point[0]*4, point[1]*4, upper_joint[0][0]*4, upper_joint[0][1]*4), width=3, fill=center_color[i])
+
     return np.array(img)
 
-if __name__ == "__main__2":
-    root_path = 'E:\\dataset\\mpii\\train\\input\\'
-    heat_path = 'E:\\dataset\\mpii\\train\\heatmap_\\'
-    limb_path = 'E:\\dataset\\mpii\\train\\limb_\\'
+
+if __name__ == "__main_2_":
+    root_path = 'D:\\dataset\\mpii\\train\\input\\'
+    heat_path = 'D:\\dataset\\mpii\\train\\heatmap_\\'
+    limb_path = 'D:\\dataset\\mpii\\train\\limb_\\'
     file_names = os.listdir(root_path)
 
     for i in range(len(file_names)):
@@ -136,7 +175,6 @@ if __name__ == "__main__2":
             plt.subplot(8, 5, i + 1 + 20)
             plt.imshow(limbs[i])
 
-
         center_idx = make_pair(points[-1], points[:-1], limbs)
         print(center_idx)
         result = result_draw(points[-1], points[:-1], center_idx)
@@ -155,11 +193,13 @@ if __name__ == "__main__":
 
     net = torch_model.center_net.CenterNet(256, 33,torch.sigmoid,3,2)
     net.load_state_dict(torch.load('E:\\dataset\\model.dict'))
+
     # net.load_state_dict('E:\\dataset\\model.dict')
 
     net = net.cuda()
 
     for i in range(len(file_names)):
+        path = 'E:\\dataset\\mpii\\images\\'
         path = 'E:\\dataset\\mpii\\mpii_human_pose_v1\\images\\'
 
         img = Image.open('{0}{1}'.format(path, file_names[i]))
@@ -185,8 +225,6 @@ if __name__ == "__main__":
             for i in range(0, 16):
                 plt.subplot(8, 5, i + 1 + 20)
                 plt.imshow(limbs[i])
-
-
             points = []
             for heat_map in heat_maps:
                points.append(find_point(heat_map))
@@ -204,6 +242,3 @@ if __name__ == "__main__":
             cv2_arr = cv2.cvtColor(cv2_arr, cv2.COLOR_RGB2BGR)
             cv2.imshow("blended", cv2_arr)
             plt.show()
-
-
-
