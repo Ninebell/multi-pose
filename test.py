@@ -191,7 +191,7 @@ if __name__ == "__main__":
 
     file_names = get_test_set()
 
-    net = torch_model.center_net.CenterNet2(256, [17, 16])
+    net = torch_model.center_net.CenterNet(256,33, torch.sigmoid)
     net.load_state_dict(torch.load('D:\\dataset\\mpii\\model.dict'))
     # net.load_state_dict('E:\\dataset\\model.dict')
 
@@ -213,9 +213,9 @@ if __name__ == "__main__":
         result = net(input_tensor)
 
         with torch.no_grad():
-            heat_maps = result[0][0].cpu().numpy()
+            heat_maps = result[1][0,0:17,:,:].cpu().numpy()
             print(heat_maps.shape)
-            limbs = result[1][0].cpu().numpy()
+            limbs = result[1][0,17:,:,:].cpu().numpy()
             for i in range(0, 17):
                 plt.subplot(8, 5, i + 1)
                 plt.imshow(heat_maps[i])
