@@ -17,7 +17,7 @@ def find_point(heat_map):
     print(np.max(heat_map))
     for r in range(1,63):
         for c in range(1, 63):
-            if np.max(heat_map[r-1:r+2,c-1:c+2]) == heat_map[r,c] and heat_map[r,c]>0.33:
+            if np.max(heat_map[r-1:r+2,c-1:c+2]) == heat_map[r,c] and heat_map[r,c]>0.5:
                 point.append((c,r))
     return point
 
@@ -186,8 +186,8 @@ if __name__ == "__main_2_":
 
 if __name__ == "__main__":
     test_file = "5.png"
-    sample_limb_path = "D:\\dataset\\mpii\\train\\limb_\\"
-    sample_heatmap_path = "D:\\dataset\\mpii\\train\\heatmap_\\"
+    sample_limb_path = "E:\\dataset\\mpii\\test\\limb_\\"
+    sample_heatmap_path = "E:\\dataset\\mpii\\test\\heatmap_\\"
 
     file_names = get_test_set()
 
@@ -198,7 +198,8 @@ if __name__ == "__main__":
     net = net.cuda()
 
     for i in range(len(file_names)):
-        path = 'D:\\dataset\\mpii\\images\\'
+        path = 'E:\\dataset\\mpii\\images\\'
+        path = 'E:\\dataset\\mpii\\mpii_human_pose_v1\\images\\'
 
         img = Image.open('{0}{1}'.format(path, file_names[i]))
         plt.imshow(np.array(img))
@@ -215,7 +216,7 @@ if __name__ == "__main__":
         with torch.no_grad():
             heat_maps = result[1][0,0:17,:,:].cpu().numpy()
             print(heat_maps.shape)
-            limbs = result[1][0,17:,:,:].cpu().numpy()
+            limbs = result[1][0,17:33,:,:].cpu().numpy()
             for i in range(0, 17):
                 plt.subplot(8, 5, i + 1)
                 plt.imshow(heat_maps[i])

@@ -35,7 +35,7 @@ def encode(image):
 def get_test_set():
 
     # joint_data_fn = 'dataset/mpii/data.json'
-    mat = loadmat('D:\\dataset\\mpii\\mpii_human_pose_v1_u12_1.mat')
+    mat = loadmat('E:\\dataset\\mpii\\mpii_human_pose_v1_u12_1.mat')
 
     file_name = []
 

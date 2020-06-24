@@ -114,7 +114,7 @@ def _main(epoches, batch_size, repeat, n_layer, save_root_path, pretrain):
 
     sch = torch.optim.lr_scheduler.StepLR(optim, 50)
 
-    for epoch in range(139, epoches):
+    for epoch in range(10, epoches):
         epoch_loss, iter_count = train_model(net, optim, criterion, batch_size)
         epoch_loss /= iter_count
         sch.step()
