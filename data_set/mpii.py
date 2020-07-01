@@ -1,4 +1,5 @@
 import torch
+import tqdm
 import os
 import shutil
 import json
@@ -14,6 +15,7 @@ from PIL import Image, ImageDraw
 import random
 from scipy.io import loadmat
 from scipy.ndimage import gaussian_filter
+
 
 joint_id = {'r_ankle': 0, 'r_knee': 1, 'r_hip': 2, 'l_hip': 3, 'l_knee': 4, 'l_ankle': 5,
             'pelvis': 6, 'thorax': 7, 'upper_neck': 8, 'heat_top': 9,
@@ -37,13 +39,13 @@ train_sk = {
 def command_parse():
     parser = argparse.ArgumentParser()
     parser.add_argument('--anno', '-a', nargs=1, help='dir of mpii anno.mat',
-                        default=['E:\\dataset\\mpii\\mpii_human_pose_v1_u12_1.mat'], dest='anno', type=str)
+                        default=['D:\\dataset\\mpii\\mpii_human_pose_v1_u12_1.mat'], dest='anno', type=str)
     parser.add_argument('--group', '-g', nargs=1, help='dir of mpii group.mat',
-                        default=['E:\\dataset\\mpii\\groups_v12.mat'], dest='group', type=str)
+                        default=['D:\\dataset\\mpii\\groups_v12.mat'], dest='group', type=str)
     parser.add_argument('--image', '-i', nargs=1, help='dir of mpii input image path',
-                        default=['E:\\dataset\\mpii\\images'], dest='img', type=str)
+                        default=['D:\\dataset\\mpii\\images'], dest='img', type=str)
     parser.add_argument('--new', '-n', nargs=1, help='dir of mpii input image path',
-                        default=['E:\\dataset\\mpii\\new_dataset'], dest='new', type=str)
+                        default=['D:\\dataset\\custom_mpii\\'], dest='new', type=str)
 
     args = parser.parse_args()
 
@@ -230,7 +232,7 @@ def create_kernel(shape, point):
     x = math.ceil(point[0])
     y = math.ceil(point[1])
     base[y,x]=1
-    base = gaussian_filter(base, 3)
+    base = gaussian_filter(base, 1.5)
     base = base / np.max(base)
 
     # for r in range(shape[0]):
@@ -240,73 +242,74 @@ def create_kernel(shape, point):
     return base
 
 
-def data_generator(batch_size, data_list, image_path):
-    random.shuffle(data_list)
+def data_generator(batch_size, data_list, img_path, shuffle=True, is_train=True):
+    def open_img(path, mode='r'):
+        img = Image.open(path)
+        if mode == 'L':
+            img = img.convert('L')
+        return np.asarray(img)
+    mean = np.array([0.485, 0.456, 0.406])
+    mean = np.array([np.ones((256,256)) * m for m in mean])
+    std = np.array([0.229, 0.224, 0.225])
+    std = np.array([np.ones((256, 256)) * s for s in std])
+    mean = np.moveaxis(mean, 0, -1)
+    std = np.moveaxis(std, 0, -1)
+    if shuffle:
+        random.shuffle(data_list)
+
+    joint_path = 'train' if is_train else 'validate'
+
+    heat_map_path = img_path + '/{0}/heat/'.format(joint_path)
+    limb_map_path = img_path + '/{0}/limb/'.format(joint_path)
     iter_len = len(data_list) // batch_size
     for b in range(iter_len):
         x = []
-        y = []
+        org = []
+        heat_list = []
+        limb_list = []
         for i in range(batch_size):
-            batch_idx = b*batch_size+i
-            data = data_list[batch_idx]
+            heat = []
+            limb = []
+            b_idx = batch_size*b+i
+            data = data_list[b_idx]
             file_name = data['file_name']
-            img = Image.open(os.path.join(image_path, file_name))
-            mean_scale = data['mean_scale']
-            loc = data['loc']
-            persons = data['joints']
-            x_scale = 256/(loc[2] - loc[0])
-            y_scale = 256/(loc[3] - loc[1])
+            input_img = open_img(img_path + '/image/{0}'.format(file_name), mode='r')
+            org.append(input_img.copy())
+            if is_train:
+                for h in range(17):
+                    heat_img = open_img(heat_map_path + '{0}/{1}'.format(h, file_name), mode='L')
+                    heat.append(heat_img)
 
-            base = np.zeros((256,256))
+                for l in range(16):
+                    limb_img = open_img(limb_map_path+'{0}/{1}'.format(l, file_name), mode='L')
+                    limb.append(limb_img)
 
-            print(loc, x_scale, y_scale)
-            for p in persons:
-                joints = p['joint_list']
-                for joint_idx in joints.keys():
-                    joint = joints[joint_idx]
-                    visible = p['visible'][joint_idx]
-                    print(joint)
-                    joint = [joint[0]-loc[0], joint[1]-loc[1]]
-                    joint = [joint[0]*x_scale, joint[1]*y_scale]
-                    if math.ceil(joint[0]) > 255.5 or math.ceil(joint[1]) > 255.5:
-                        continue
-                    kernel = create_kernel((256, 256), joint)
-                    base = np.maximum(base, kernel)
-            base = image_list_blend(img, base)
-            base = base.convert("RGB")
-            cvm = np.asarray(base) * 255
-            cvm = np.asarray(cvm, dtype=np.uint8)
-            cvm = cv2.cvtColor(cvm, cv2.COLOR_RGB2BGR)
-            cv2.imshow("tuple", cvm)
-            key = cv2.waitKey()
-            if chr(key) == 'b':
-                p1 = 'E:\dataset\\mpii\\new_dataset\\label\\train\\'
-                p2 = 'E:\dataset\\mpii\\new_dataset\\label\\trash\\'
-                fn = file_name.split('.')[0]+'.json'
-                shutil.move(p1+fn, p2+fn)
+                heat = np.asarray(heat)
+                limb = np.asarray(limb)
+                heat_list.append(heat)
+                limb_list.append(limb)
+            # input_img = (input_img/255 - mean)/std
+            input_img = input_img/255
+            input_img = np.moveaxis(input_img, 2, 0)
+            x.append(input_img)
+        x = np.asarray(x)
+        heat_list = np.asarray(heat_list)/255
+        limb_list = np.asarray(limb_list)/255
+        yield x, heat_list, limb_list, org
 
-                base.save(p2+file_name)
-
-            # fig = plt.figure()
-            # ax1 = fig.add_subplot(2,1,1)
-            # ax2 = fig.add_subplot(2,1,2)
-            #
-            # ax1.imshow(img)
-            # ax2.imshow(base)
-            # plt.show()
-            # plt.close()
+    return None
 
 
 def make_limb_map(base, joints):
     center_point = joints[-1]
     for j_idx, joint in enumerate(joints[:-1]):
-        new_limb = np.zeros((256,256))
+        new_limb = np.zeros((base.shape[1], base.shape[2]))
         if joint[0] == joint[1] == 0:
             continue
 
         limb_img = Image.fromarray(new_limb)
         imd = ImageDraw.Draw(limb_img)
-        imd.line([joint[0], joint[1], center_point[0], center_point[1]], fill=255, width=2)
+        imd.line([joint[0], joint[1], center_point[0], center_point[1]], fill=255, width=1)
         new_limb = np.array(limb_img)
         new_limb = new_limb/np.max(new_limb)
 
@@ -315,7 +318,7 @@ def make_limb_map(base, joints):
     return base
 
 
-def make_new_joints(joints, loc, x_scale, y_scale):
+def make_new_joints(joints, loc, x_scale, y_scale, limit):
     new_joints = np.zeros((17,2))
     center_x = 0
     center_y = 0
@@ -329,8 +332,11 @@ def make_new_joints(joints, loc, x_scale, y_scale):
             joint[0] = 0
         if -2 < joint[1] < 0:
             joint[1] = 0
-
-        if math.ceil(joint[0]) > 255.0 or math.ceil(joint[1]) > 255.0:
+        if limit-1 <= math.ceil(joint[0]) <= limit+1:
+            joint[0]=limit-1
+        if limit-1 <= math.ceil(joint[1]) <= limit+1:
+            joint[1]=limit-1
+        if math.ceil(joint[0]) > limit or math.ceil(joint[1]) > limit:
             continue
         if joint[0] < 0 or joint[1] < 0:
             continue
@@ -353,13 +359,15 @@ def make_heat_map(base, joints):
     for j_idx, joint in enumerate(joints):
         if joint[0] == joint[1] == 0:
             continue
-        kernel = create_kernel((256, 256), joint)
+        kernel = create_kernel((base.shape[1], base.shape[2]), joint)
         base[j_idx] = np.maximum(base[j_idx], kernel)
 
     return base
 
 
 def save_label(data_list, save_path, filter_names):
+    image_size = 64
+
     os.makedirs(save_path + '/heat', exist_ok=True)
     os.makedirs(save_path + '/limb', exist_ok=True)
     for i in range(17):
@@ -367,77 +375,49 @@ def save_label(data_list, save_path, filter_names):
     for i in range(16):
         os.makedirs(save_path+'/limb/{0}'.format(i), exist_ok=True)
 
-    iter_len = len(data_list) // batch_size
+    iter_len = len(data_list)
     for b in range(iter_len):
-        for i in range(batch_size):
+        data = data_list[b]
 
-            batch_idx = b * batch_size + i
-            data = data_list[batch_idx]
+        loc = data['loc']
+        persons = data['joints']
+        x_scale = image_size / (loc[2] - loc[0])
+        y_scale = image_size / (loc[3] - loc[1])
 
-            if data['file_name'] in filter_names:
-                continue
+        heat_base = np.zeros((17, image_size, image_size))
+        limb_base = np.zeros((16, image_size, image_size))
 
-            loc = data['loc']
-            persons = data['joints']
-            x_scale = 256 / (loc[2] - loc[0])
-            y_scale = 256 / (loc[3] - loc[1])
+        for p in persons:
+            joints = p['joint_list']
+            new_joints = make_new_joints(joints, loc, x_scale, y_scale, image_size)
+            heat_base = make_heat_map(heat_base, new_joints)
+            limb_base = make_limb_map(limb_base, new_joints)
 
-            heat_base = np.zeros((17, 256, 256))
-            limb_base = np.zeros((16, 256, 256))
+        for e in range(17):
+            base_i = np.array(heat_base[e, :, :]*255, dtype=np.uint8)
+            img = Image.fromarray(base_i)
+            img.save(save_path+'/heat/{0}/{1}'.format(e, data['file_name']))
 
-            for p in persons:
-                joints = p['joint_list']
-                new_joints = make_new_joints(joints, loc, x_scale, y_scale)
-                heat_base = make_heat_map(heat_base, new_joints)
-                limb_base = make_limb_map(limb_base, new_joints)
-
-            for e in range(17):
-                base_i = np.array(heat_base[e, :, :]*255, dtype=np.uint8)
-                img = Image.fromarray(base_i)
-                img.save(save_path+'/heat/{0}/{1}'.format(e, data['file_name']))
-
-            for e in range(16):
-                base_i = np.array(limb_base[e, :, :]*255, dtype=np.uint8)
-                img = Image.fromarray(base_i)
-                img.save(save_path+'/limb/{0}/{1}'.format(e, data['file_name']))
+        for e in range(16):
+            base_i = np.array(limb_base[e, :, :]*255, dtype=np.uint8)
+            img = Image.fromarray(base_i)
+            img.save(save_path+'/limb/{0}/{1}'.format(e, data['file_name']))
 
 
 def for_filter(batch_size, data_list, image_path):
     iter_len = len(data_list) // batch_size
     for b in range(iter_len):
-        x = []
-        y = []
         for i in range(batch_size):
-            print(b)
             batch_idx = b * batch_size + i
             data = data_list[batch_idx]
             file_name = data['file_name']
-            img = Image.open(os.path.join(image_path, file_name))
-            loc = data['loc']
-            persons = data['joints']
-            x_scale = 256 / (loc[2] - loc[0])
-            y_scale = 256 / (loc[3] - loc[1])
-
-            base = np.zeros((256, 256))
-
-            for p in persons:
-                joints = p['joint_list']
-                for joint_idx in joints.keys():
-                    joint = joints[joint_idx]
-                    joint = [joint[0] - loc[0], joint[1] - loc[1]]
-                    joint = [joint[0] * x_scale, joint[1] * y_scale]
-                    if -2<joint[0]<0:
-                        joint[0]=0
-                    if -2<joint[1]<0:
-                        joint[1]=0
-                    if math.ceil(joint[0]) > 255.5 or math.ceil(joint[1]) > 255.5:
-                        continue
-                    if joint[0]<0 or joint[1]<0:
-                        continue
-                    kernel = create_kernel((256, 256), joint)
-                    base = np.maximum(base, kernel)
+            img = Image.open(image_path+'\\image\\'+file_name)
+            base = np.zeros((64,64))
+            for i in range(17):
+                temp= Image.open(image_path+'train\\heat\\{0}\\'.format(i)+file_name)
+                base = np.maximum(base, temp)
             base = image_list_blend(img, base)
-            p2 = 'E:\dataset\\mpii\\new_dataset\\label\\temp\\'
+            p2 = 'D:\dataset\\custom_mpii\\temp\\'
             base = base.convert('RGB')
             base.save(p2+file_name)
 
@@ -479,21 +459,193 @@ def image_list_blend(org, base):
     blended = Image.blend(t, temp, 0.5)
     return blended
 
+#
+# if __name__ == "__main__2":
+#     base_path = 'D:\\dataset\\custom_mpii'
+#     label_path = base_path
+#     labels = os.listdir(base_path+'\\train')
+#     train_labels = []
+#     validate_labels = []
+#
+#     filter_names = os.listdir(label_path+'\\trash')
+#     for i in range(len(labels)):
+#         if not os.path.isfile(os.path.join(label_path+'\\train',labels[i])):
+#             continue
+#         label = json.load(open(os.path.join(label_path+'\\train',labels[i])))
+#         if not label['file_name'] in filter_names:
+#             train_labels.append(label)
+#
+#     for_filter(1, train_labels, 'D:\\dataset\\custom_mpii\\')
+
+
+def get_datas(anno):
+    pred = anno['pred']
+    images = pred['image'][0]
+    anno_rect = pred['annorect'][0]
+    mpii_dict = {}
+    for j, (img, rects) in enumerate(zip(images, anno_rect)):
+        file_name = img[0, 0][0][0]
+        anno_points = rects['annopoints'][0]
+        scale = rects['scale'][0]
+        obj_pos = rects['objpos'][0]
+        anno_rects = {}
+        for i, (points, scale, obj) in enumerate(zip(anno_points, scale, obj_pos)):
+            rect = {}
+            joint_points = {}
+            if len(points) == 0:
+                continue
+            points = points['point']
+            point = points[0][0]
+            idxes = point['id'][0]
+            pt_xs = point['x'][0]
+            pt_ys = point['y'][0]
+            for index, pt_x, pt_y in zip(idxes, pt_xs, pt_ys):
+                joint_points[str(index[0][0])] = [pt_x[0][0], pt_y[0][0]]
+
+            scale = scale[0][0]
+            x = obj[0][0][0][0][0]
+            y = obj[0][0][1][0][0]
+            rect['points'] = joint_points
+            rect['scale'] = scale
+            rect['obj_pos'] = {'x': x, 'y': y}
+            anno_rects[str(i + 1)] = rect
+
+        mpii_dict[str(j)] = {'file_name': file_name, 'anno': anno_rects}
+    return mpii_dict
+
+
+def read_groups(fp):
+    ridxes = fp.readline()
+    # ridxes = fp.readline()
+    ridxes = ridxes.strip().split(',')
+    for i in range(len(ridxes)):
+        ridxes[i] = ridxes[i].strip('[')
+        ridxes[i] = ridxes[i].strip(']')
+    return ridxes
+
+
+def train_data_create(mpii_dict, groups):
+    base = 'D:\\dataset\\mpii\\images'
+    save_base = 'D:\\dataset\\custom_mpii_2\\'
+
+    image_size = 64
+
+    os.makedirs(save_base + '/heat', exist_ok=True)
+    os.makedirs(save_base + '/limb', exist_ok=True)
+    for i in range(17):
+        os.makedirs(save_base + '/heat/{0}'.format(i), exist_ok=True)
+    for i in range(16):
+        os.makedirs(save_base + '/limb/{0}'.format(i), exist_ok=True)
+
+    for i in tqdm.tqdm(range(len(groups))):
+        mpii = mpii_dict[str(i)]
+        group = groups[i].replace(';',',').split(',')
+        file_name = mpii['file_name']
+        anno = mpii['anno']
+        min_x, max_x, min_y, max_y = 20000, 20000, 0, 0
+        mean_scale = 0
+        for g in group:
+            obj_pos = anno[g]['obj_pos']
+            obj_x = obj_pos['x']
+            obj_y = obj_pos['y']
+            min_x = obj_x if min_x > obj_x else min_x
+            min_y = obj_y if min_y > obj_y else min_y
+
+            max_x = obj_x if max_x < obj_x else max_x
+            max_y = obj_y if max_y < obj_y else max_y
+
+            mean_scale += anno[g]['scale']
+
+        mean_scale = mean_scale/len(group) if len(group) else 0
+        img = Image.open('{0}/{1}'.format(base,file_name))
+        # crop_img, loc = ImageCrop(img, [min_x,min_y,max_x,max_y],mean_scale)
+
+        crop_img, loc = ImageCrop(img.copy(), (min_x, min_y, max_x, max_y), mean_scale)
+        crop_img = crop_img.resize((256, 256))
+        crop_img.show()
+
+        heat_base = np.zeros((17, image_size, image_size))
+        limb_base = np.zeros((16, image_size, image_size))
+
+        for g in group:
+            joint_loc = anno[g]['points']
+            x_scale = image_size / (loc[2] - loc[0])
+            y_scale = image_size / (loc[3] - loc[1])
+            new_joint = make_new_joints(joint_loc, loc, x_scale, y_scale, image_size)
+            heat_base = make_heat_map(heat_base, new_joint)
+            limb_base = make_limb_map(limb_base, new_joint)
+
+        for e in range(17):
+            base_i = np.array(heat_base[e, :, :]*255, dtype=np.uint8)
+            img = Image.fromarray(base_i)
+            img.save(save_base+'/train/heat/{0}/{1}'.format(e, file_name))
+            for r in range(1, 4):
+                r_img = img.rotate(90*r)
+                r_img.save(save_base+'/train/heat/{0}/r_{1}_{2}'.format(e, r, file_name))
+
+        for e in range(16):
+            base_i = np.array(limb_base[e, :, :]*255, dtype=np.uint8)
+            img = Image.fromarray(base_i)
+            img.save(save_base+'/train/limb/{0}/{1}'.format(e, file_name))
+            for r in range(1, 4):
+                r_img = img.rotate(90*r)
+                r_img.save(save_base+'/train/limb/{0}/r_{1}_{2}'.format(e, r, file_name))
+
+        crop_img.save(save_base+'/train/image/{0}'.format(file_name))
+
+        for r in range(1, 4):
+            r_img = crop_img.rotate(90 * r)
+            r_img.save(save_base + '/train/image/r_{1}_{2}'.format(e, r, file_name))
+
 
 if __name__ == "__main__":
+    anno = loadmat('train_anno_list.mat')
+    groups = open('train_data_set.csv','r')
+    groups = read_groups(groups)
+    mpii_dict = get_datas(anno)
+
+    train_data_create(mpii_dict, groups)
+
+
+if __name__ == "__main__2":
+    base_path = 'D:\\dataset\\mpii\\new_data_set'
+    label_path = base_path + '\\label'
+    labels = os.listdir(label_path+'\\train')
+    train_labels = []
+    validate_labels = []
+
+    filter_names = os.listdir(label_path+'\\trash')
+    for i in range(len(labels)):
+        if not os.path.isfile(os.path.join(label_path+'\\train',labels[i])):
+            continue
+        label = json.load(open(os.path.join(label_path+'\\train',labels[i])))
+        if not label['file_name'] in filter_names:
+            train_labels.append(label)
+
+    for d, x, y in data_generator(len(train_labels), train_labels, 'D:\\dataset\\custom_mpii\\'):
+        d = np.reshape(d, (len(train_labels), 3, -1))
+        d = np.moveaxis(d, 0, 1)
+        d = np.reshape(d, (3, -1))
+        m = np.mean(d, axis=1)
+        v = np.var(d, axis=1)
+        print(len(train_labels), m, v)
+
+
+if __name__ == "__main__2":
+    print("A")
     mpii_anno_path, mpii_group_path, img_path, new_path = command_parse()
     #
-    # save_mpii(mpii_anno_path, mpii_group_path)
+    save_mpii(mpii_anno_path, mpii_group_path)
     # #
     # json_arr = open('custom_json.json', 'r').readline()
     # json_arr = json.loads(json_arr)
     #
     # make_train_data(img_path, new_path, json_arr, (256, 256), 0.2)
 
-    image_path = new_path+'\\image'
-    label_path = new_path+'\\label'
+    # image_path = new_path+'\\image'
+    label_path = new_path
 
-    filter_names = os.listdir(label_path+'\\trash')
+    filter_names = os.listdir(new_path+'\\trash')
 
     labels = os.listdir(label_path+'\\train')
     train_labels = []
@@ -502,7 +654,9 @@ if __name__ == "__main__":
         if not os.path.isfile(os.path.join(label_path+'\\train',labels[i])):
             continue
         label = json.load(open(os.path.join(label_path+'\\train',labels[i])))
+        if label['file_name'] in filter_names:
+            continue
         train_labels.append(label)
 
     batch_size = 1
-    save_label(train_labels, label_path+'\\train', filter_names)
+    save_label(train_labels, new_path+'\\train\\', filter_names)
