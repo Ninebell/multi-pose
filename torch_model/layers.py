@@ -123,6 +123,8 @@ class Hourglass(nn.Module):
             self.skips.append(BottleNeckBlock(o_f, o_f, self.attention))
 
         self.max_pool = nn.MaxPool2d(3, stride=2, padding=1)
+        self.up_con = nn.Upsample(scale_factor=2, mode='nearest')
+        self.reflect_pad = nn.ReflectionPad2d(1)
 
     def forward(self, x):
         skips = []
@@ -138,7 +140,10 @@ class Hourglass(nn.Module):
             if i == 0:
                 up = self.ups[i](skips[self.layers-i-1])
             else:
-                up = F.interpolate(up, scale_factor=2)
+                up = self.up_con(up)
+                # up = self.reflect_pad(up)
+
+                # up = F.interpolate(up, scale_factor=2)
                 up = up + skips[self.layers-i-1]
                 up = self.ups[i](up)
 
