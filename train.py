@@ -12,12 +12,14 @@ import torch_model.center_net
 from torch_model.losses import focal_loss
 from utils import data_generator, save_heatmap, save_limb
 
+from data_set.mpii import get_joints_from_heat_map
+
 
 def center_loss(output, target):
     o_heat = output[0]
     o_limb = output[1]
-    t_heat = target[0]
-    t_limb = target[1]
+    t_heat = target[:,:17,:,:]
+    t_limb = target[:,17:,:,:]
 
     point_fl = focal_loss(o_heat, t_heat)
     limb_fl = focal_loss(o_limb, t_limb)
@@ -77,8 +79,8 @@ def test_model(net, data_generator, limit, path, is_cuda=True):
                 if is_cuda:
                     x = torch.from_numpy(x).type(torch.FloatTensor).cuda()
                 result = net(x)
-                heat_map_result = np.moveaxis(result[1][0, 0:17, :, :].cpu().numpy(), 0, 2)
-                limb_map_result = np.moveaxis(result[1][0, 17:, :, :].cpu().numpy(), 0, 2)
+                heat_map_result = np.moveaxis(result[-1][0][0, :, :, :].cpu().numpy(), 0, 2)
+                limb_map_result = np.moveaxis(result[-1][1][0, :, :, :].cpu().numpy(), 0, 2)
                 save_heatmap(heat_map_result, '{0}/heatmap_{1}.png'.format(path, idx))
                 save_limb(limb_map_result, '{0}/limb{1}.png'.format(path, idx))
 
@@ -94,7 +96,7 @@ def print_train_info(epoch, batch_size):
 def _main(epoches, batch_size, repeat, n_layer, save_root_path, pretrain):
     min_loss = None
 
-    net = torch_model.center_net.CenterNet(256, 33, out_activation=torch.sigmoid,n_layer=n_layer, n_stack=repeat)
+    net = torch_model.center_net.CenterNet(128, [17, 16], out_activation=[torch.sigmoid, torch.sigmoid], n_layer=n_layer, n_stack=repeat)
     net.info()
     print_train_info(epoches, batch_size)
 
@@ -128,10 +130,10 @@ def _main(epoches, batch_size, repeat, n_layer, save_root_path, pretrain):
 
 
 def get_arguments():
-    data_set_path = "D:\\dataset\\{0}\\result".format(conf.data_set_name)
+    data_set_path = "E:\\dataset\\{0}\\result".format(conf.data_set_name)
     parser = argparse.ArgumentParser()
-    parser.add_argument('--repeat', '-r', nargs='+', help='hourglass count', default=[2], dest='repeat', type=int)
-    parser.add_argument('--nstack', '-n', nargs='+', help='hourglass layer count', default=[3], dest='n_stack', type=int)
+    parser.add_argument('--repeat', '-r', nargs='+', help='hourglass count', default=[3], dest='repeat', type=int)
+    parser.add_argument('--nstack', '-n', nargs='+', help='hourglass layer count', default=[5], dest='n_stack', type=int)
     parser.add_argument('--save', '-s', nargs='+', help='save path', default=[data_set_path], dest='save_path')
     parser.add_argument('--epoch', '-e', nargs='+', help='epoch count', default=[200], dest='epoch', type=int)
     parser.add_argument('--batch', '-b', nargs='+', help='batch size', default=[8], dest='batch_size', type=int)

@@ -20,7 +20,7 @@ class AttentionBlock(nn.Module):
         self.g_max_pool = nn.AdaptiveMaxPool2d((1, 1))
 
         self.compress = ChannelPool()
-        self.sp_w0 = nn.Conv2d(2, 1, 7, stride=1, padding=6//2)
+        self.sp_w0 = nn.Conv2d(2, 1, 7, stride=1, padding=3)
 
     def __channel_forward__(self, x):
         def __chanel_attention__(ch_input):
@@ -59,7 +59,7 @@ class AttentionBlock(nn.Module):
 
 
 class BottleNeckBlock(nn.Module):
-    def __init__(self, input_feature, output_feature, attention=False, ratio=16, activation=torch.selu):
+    def __init__(self, input_feature, output_feature, attention=False, ratio=16, activation=torch.relu):
         super(BottleNeckBlock, self).__init__()
         self.input_feature = input_feature
         self.output_feature = output_feature
@@ -85,17 +85,22 @@ class BottleNeckBlock(nn.Module):
 
     def forward(self, x):
         init = x
-        x = self.activation(self.batch1(self.c1(x)))
-        x = self.activation(self.batch2(self.c2(x)))
-        x = self.batch3(self.c3(x))
+        x = self.batch1(x)
+        x = self.activation(x)
+        x = self.c1(x)
 
-        if self.input_feature != self.output_feature:
-            init = self.c4(init)
+        x = self.batch2(x)
+        x = self.activation(x)
+        x = self.c2(x)
+
+        x = self.batch3(x)
+        x = self.activation(x)
+        x = self.c3(x)
 
         if self.attention:
             x = self.attention.forward(x)
 
-        return self.activation(x + init)
+        return x + init
 
 
 class Hourglass(nn.Module):
@@ -117,12 +122,14 @@ class Hourglass(nn.Module):
         self.skips = nn.ModuleList()
 
         for i in range(self.layers):
-            self.downs.append(BottleNeckBlock(o_f, o_f, self.attention) if i !=0
+            self.downs.append(BottleNeckBlock(o_f, o_f, self.attention) if i != 0
                               else BottleNeckBlock(i_f, o_f, self.attention))
             self.ups.append(BottleNeckBlock(o_f, o_f, self.attention))
             self.skips.append(BottleNeckBlock(o_f, o_f, self.attention))
 
-        self.max_pool = nn.MaxPool2d(3, stride=2, padding=1)
+        self.final_skip = BottleNeckBlock(o_f, o_f, self.attention)
+
+        self.max_pool = nn.MaxPool2d(2, stride=2, padding=0)
 
     def forward(self, x):
         skips = []
@@ -133,6 +140,8 @@ class Hourglass(nn.Module):
             skips.append(skip)
             if i != self.layers-1:
                 down = self.max_pool(down)
+
+        skips[self.layers-1] = self.final_skip(skips[self.layers-1])
 
         for i in range(self.layers):
             if i == 0:
