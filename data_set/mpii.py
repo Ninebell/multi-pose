@@ -231,13 +231,13 @@ def create_kernel(shape, point):
 
     x = math.ceil(point[0])
     y = math.ceil(point[1])
-    base[y,x]=1
-    base = gaussian_filter(base, 1.5)
-    base = base / np.max(base)
+    # base[y,x]=1
+    # base = gaussian_filter(base, 1.5)
+    # base = base / np.max(base)
 
-    # for r in range(shape[0]):
-    #     for c in range(shape[1]):
-    #         base[r, c] = np.exp(-((r-y)**2+(c-x)**2)/9)
+    for r in range(shape[0]):
+        for c in range(shape[1]):
+            base[r, c] = np.exp(-((r-y)**2+(c-x)**2)/5)
 
     return base
 
@@ -409,15 +409,17 @@ def for_filter(batch_size, data_list, image_path):
     for b in range(iter_len):
         for i in range(batch_size):
             batch_idx = b * batch_size + i
-            data = data_list[batch_idx]
-            file_name = data['file_name']
-            img = Image.open(image_path+'\\image\\'+file_name)
+            file_name = data_list[batch_idx]
+            img = Image.open(image_path+'train\\image\\'+file_name)
             base = np.zeros((64,64))
             for i in range(17):
                 temp= Image.open(image_path+'train\\heat\\{0}\\'.format(i)+file_name)
                 base = np.maximum(base, temp)
+            for i in range(16):
+                temp = Image.open(image_path + 'train\\limb\\{0}\\'.format(i) + file_name)
+                base = np.maximum(base, temp)
             base = image_list_blend(img, base)
-            p2 = 'D:\dataset\\custom_mpii\\temp\\'
+            p2 = 'D:\dataset\\custom_mpii_2\\temp\\'
             base = base.convert('RGB')
             base.save(p2+file_name)
 
@@ -530,12 +532,12 @@ def train_data_create(mpii_dict, groups):
 
     image_size = 64
 
-    os.makedirs(save_base + '/heat', exist_ok=True)
-    os.makedirs(save_base + '/limb', exist_ok=True)
+    os.makedirs(save_base + '/train/heat', exist_ok=True)
+    os.makedirs(save_base + '/train/limb', exist_ok=True)
     for i in range(17):
-        os.makedirs(save_base + '/heat/{0}'.format(i), exist_ok=True)
+        os.makedirs(save_base + '/train/heat/{0}'.format(i), exist_ok=True)
     for i in range(16):
-        os.makedirs(save_base + '/limb/{0}'.format(i), exist_ok=True)
+        os.makedirs(save_base + '/train/limb/{0}'.format(i), exist_ok=True)
 
     for i in tqdm.tqdm(range(len(groups))):
         mpii = mpii_dict[str(i)]
@@ -562,7 +564,6 @@ def train_data_create(mpii_dict, groups):
 
         crop_img, loc = ImageCrop(img.copy(), (min_x, min_y, max_x, max_y), mean_scale)
         crop_img = crop_img.resize((256, 256))
-        crop_img.show()
 
         heat_base = np.zeros((17, image_size, image_size))
         limb_base = np.zeros((16, image_size, image_size))
@@ -599,12 +600,19 @@ def train_data_create(mpii_dict, groups):
 
 
 if __name__ == "__main__":
-    anno = loadmat('train_anno_list.mat')
-    groups = open('train_data_set.csv','r')
-    groups = read_groups(groups)
-    mpii_dict = get_datas(anno)
+    cmd = 'make'
 
-    train_data_create(mpii_dict, groups)
+    if cmd == 'make':
+        anno = loadmat('train_anno_list.mat')
+        groups = open('train_data_set.csv','r')
+        groups = read_groups(groups)
+        mpii_dict = get_datas(anno)
+
+        train_data_create(mpii_dict, groups)
+    else:
+        base_path = 'D:\\dataset\\custom_mpii_2\\'
+        file_list = os.listdir(base_path+'train\\image')
+        for_filter(1, file_list, base_path)
 
 
 if __name__ == "__main__2":
