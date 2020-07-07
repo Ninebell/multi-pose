@@ -232,12 +232,12 @@ def create_kernel(shape, point):
     x = math.ceil(point[0])
     y = math.ceil(point[1])
     base[y,x]=1
-    base = gaussian_filter(base, 1.5)
-    base = base / np.max(base)
+    # base = gaussian_filter(base, 1.5)
+    # base = base / np.max(base)
 
-    # for r in range(shape[0]):
-    #     for c in range(shape[1]):
-    #         base[r, c] = np.exp(-((r-y)**2+(c-x)**2)/9)
+    for r in range(shape[0]):
+        for c in range(shape[1]):
+            base[r, c] = np.exp(-((r-y)**2+(c-x)**2)/5)
 
     return base
 
@@ -525,17 +525,18 @@ def read_groups(fp):
 
 
 def train_data_create(mpii_dict, groups):
-    base = 'D:\\dataset\\mpii\\images'
-    save_base = 'D:\\dataset\\custom_mpii_2\\'
+    base = 'E:\\dataset\\mpii\\images'
+    base = 'E:\\dataset\\mpii\\mpii_human_pose_v1\\images'
+    save_base = 'E:\\dataset\\custom_mpii_2\\'
 
     image_size = 64
 
-    os.makedirs(save_base + '/heat', exist_ok=True)
-    os.makedirs(save_base + '/limb', exist_ok=True)
+    os.makedirs(save_base + '/train/heat', exist_ok=True)
+    os.makedirs(save_base + '/train/limb', exist_ok=True)
     for i in range(17):
-        os.makedirs(save_base + '/heat/{0}'.format(i), exist_ok=True)
+        os.makedirs(save_base + '/train/heat/{0}'.format(i), exist_ok=True)
     for i in range(16):
-        os.makedirs(save_base + '/limb/{0}'.format(i), exist_ok=True)
+        os.makedirs(save_base + '/train/limb/{0}'.format(i), exist_ok=True)
 
     for i in tqdm.tqdm(range(len(groups))):
         mpii = mpii_dict[str(i)]
@@ -562,7 +563,6 @@ def train_data_create(mpii_dict, groups):
 
         crop_img, loc = ImageCrop(img.copy(), (min_x, min_y, max_x, max_y), mean_scale)
         crop_img = crop_img.resize((256, 256))
-        crop_img.show()
 
         heat_base = np.zeros((17, image_size, image_size))
         limb_base = np.zeros((16, image_size, image_size))
