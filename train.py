@@ -19,15 +19,21 @@ from torch_model.losses import focal_loss
 from utils import data_generator, save_heatmap, save_limb
 from data_set.mpii import data_generator as mpii_generator
 
+from data_set.mpii import get_joints_from_heat_map
+
 
 def center_loss(output, target):
-    o_heat = output[:,:17,:,:]
-    o_limb = output[:,17:,:,:]
+    o_heat = output[0]
+    o_limb = output[1]
     t_heat = target[:,:17,:,:]
     t_limb = target[:,17:,:,:]
 
-    point_fl = focal_loss(o_heat, t_heat)
-    limb_fl = focal_loss(o_limb, t_limb)
+    # point_fl = focal_loss(o_heat, t_heat)
+    # limb_fl = focal_loss(o_limb, t_limb)
+
+    point_fl = torch.mean(torch.pow(torch.abs(o_heat-t_heat), 2))
+    limb_fl = torch.mean(torch.pow(torch.abs(o_limb-t_limb) ,2))
+    print(point_fl.item(), limb_fl.item())
 
     # sz = limb_loss(o_limb, t_size, t_heat)
 
@@ -39,24 +45,12 @@ def train_model(net, optim, criterion, batch_size, is_cuda=True):
     epoch_loss = 0
     repeat = net.n_stack
 
-    # labels = os.listdir(conf.train_path)
-    # train_labels = []
-
-    # filter_names = os.listdir(conf.root_path + '\\trash')
-    # for i in range(len(labels)):
-    #     if not os.path.isfile(os.path.join(conf.train_path, labels[i])):
-    #         continue
-    #     label = json.load(open(os.path.join(conf.train_path, labels[i])))
-    #     # if not label['file_name'] in filter_names:
-    #     train_labels.append(label)
-
     for data in tqdm(data_generator(batch_size)):
         iter_count += 1
         x, heat, limb = data
-        optim.zero_grad()
         if is_cuda:
-            tmp = [0 for i in range(repeat * 2)]
-            target = [0 for i in range(repeat)]
+            tmp = [0 for _ in range(repeat * 2)]
+            target = [0 for _ in range(repeat)]
             for i in range(repeat):
                 tmp[i * 2] = heat.copy()
                 tmp[i * 2 + 1] = limb.copy()
@@ -71,11 +65,14 @@ def train_model(net, optim, criterion, batch_size, is_cuda=True):
         result = net(x)
         loss = 0
         for i in range(repeat):
+            print('======================')
             inter_loss = criterion(result[i], target[i])
+            print('======================')
             loss += inter_loss
+        optim.zero_grad()
         loss.backward()
-        epoch_loss += loss.item()
         optim.step()
+        epoch_loss += loss.item()
     return epoch_loss, iter_count
 
 
@@ -92,15 +89,17 @@ def test_model(net, limit, path, is_cuda=True):
                 temp = np.array(temp*255, dtype=np.uint8)
                 img = PIL.Image.fromarray(temp)
                 img.save('{0}/input_{1}.png'.format(path, idx))
-                #
-                # Image.imsave('{0}/input_{1}.png'.format(path, idx), )
                 if is_cuda:
                     x = torch.from_numpy(x).type(torch.FloatTensor).cuda()
                 result = net(x)
-                heat_map_result = np.moveaxis(result[1][0, 0:17, :, :].cpu().numpy(), 0, 2)
-                limb_map_result = np.moveaxis(result[1][0, 17:, :, :].cpu().numpy(), 0, 2)
-                save_heatmap(heat_map_result, '{0}/heatmap_{1}.png'.format(path, idx))
-                save_limb(limb_map_result, '{0}/limb{1}.png'.format(path, idx))
+                for i in range(len(result)):
+                    # heat = heat[0]
+                    # heat = np.moveaxis(heat,0, 2)
+                    # save_heatmap(heat, '{0}/{1}_heatmap_target{2}.png'.format(path, i, idx))
+                    heat_map_result = np.moveaxis(result[i][0][0, :, :, :].cpu().numpy(), 0, 2)
+                    limb_map_result = np.moveaxis(result[i][1][0, :, :, :].cpu().numpy(), 0, 2)
+                    save_heatmap(heat_map_result, '{0}/{1}_heatmap_{2}.png'.format(path, i, idx))
+                    save_limb(limb_map_result, '{0}/{1}_limb{2}.png'.format(path, i, idx))
 
 
 def print_train_info(epoch, batch_size):
@@ -114,7 +113,7 @@ def print_train_info(epoch, batch_size):
 def _main(epoches, batch_size, repeat, n_layer, save_root_path, pretrain):
     min_loss = None
 
-    net = torch_model.center_net.CenterNet(256, 33, out_activation=torch.sigmoid,n_layer=n_layer, n_stack=repeat)
+    net = torch_model.center_net.CenterNet(128, [17, 16], out_activation=[torch.sigmoid, torch.sigmoid], n_layer=n_layer, n_stack=repeat)
     net.info()
     print_train_info(epoches, batch_size)
 
@@ -126,7 +125,7 @@ def _main(epoches, batch_size, repeat, n_layer, save_root_path, pretrain):
     if is_cuda:
         net = net.cuda()
 
-    lr = 1e-4
+    lr = 1e-3
 
     if pretrain is not None:
         net.load_state_dict(torch.load(pretrain))
@@ -138,7 +137,7 @@ def _main(epoches, batch_size, repeat, n_layer, save_root_path, pretrain):
     for epoch in range(1, epoches):
         epoch_loss, iter_count = train_model(net, optim, criterion, batch_size)
         epoch_loss /= iter_count
-        sch.step()
+        # sch.step()
         print('\n', epoch, epoch_loss, '\n')
         save_path = '{0}\\{1}_{2:4d}\\'.format(save_root_path, epoch, int(epoch_loss*100))
         os.makedirs(save_path, exist_ok=True)
@@ -151,11 +150,11 @@ def _main(epoches, batch_size, repeat, n_layer, save_root_path, pretrain):
 def get_arguments():
     data_set_path = "D:\\dataset\\{0}\\result".format(conf.data_set_name)
     parser = argparse.ArgumentParser()
-    parser.add_argument('--repeat', '-r', nargs='+', help='hourglass count', default=[2], dest='repeat', type=int)
-    parser.add_argument('--nstack', '-n', nargs='+', help='hourglass layer count', default=[5], dest='n_stack', type=int)
+    parser.add_argument('--repeat', '-r', nargs='+', help='hourglass count', default=[3], dest='repeat', type=int)
+    parser.add_argument('--nstack', '-n', nargs='+', help='hourglass layer count', default=[4], dest='n_stack', type=int)
     parser.add_argument('--save', '-s', nargs='+', help='save path', default=[data_set_path], dest='save_path')
-    parser.add_argument('--epoch', '-e', nargs='+', help='epoch count', default=[200], dest='epoch', type=int)
-    parser.add_argument('--batch', '-b', nargs='+', help='batch size', default=[8], dest='batch_size', type=int)
+    parser.add_argument('--epoch', '-e', nargs='+', help='  epoch count', default=[200], dest='epoch', type=int)
+    parser.add_argument('--batch', '-b', nargs='+', help='batch size', default=[10], dest='batch_size', type=int)
     parser.add_argument('--pretrain', '-p', nargs='+', help='pretrain model', default=[None], dest='pretrain')
 
     repeat = parser.parse_args().repeat
