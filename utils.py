@@ -415,6 +415,12 @@ def data_generator(batch_size, shuffle=True, is_train=True):
     batch_iter = len(dirs)//batch_size
     heat_map_len = len(os.listdir(base_path + heat_map_path))
     limb_len = len(os.listdir(base_path + limb_path))
+    mean = np.array([0.485, 0.456, 0.406])
+    mean = np.array([np.ones((256, 256)) * m for m in mean])
+    std = np.array([0.229, 0.224, 0.225])
+    std = np.array([np.ones((256, 256)) * s for s in std])
+    mean = np.moveaxis(mean, 0, -1)
+    std = np.moveaxis(std, 0, -1)
     for idx in range(batch_iter):
         # print(idx)
         x = []
@@ -428,7 +434,9 @@ def data_generator(batch_size, shuffle=True, is_train=True):
                 continue
             # print(img.mode, file_name)
             img = img.resize((256,256))
+            # img.show()
             img = np.asarray(img)/255.
+            img = (img - mean)/std
             img = np.moveaxis(img, 2, 0)
             x.append(img)
 
@@ -482,97 +490,3 @@ def save_heatmap(values, path):
     gt = np.reshape(gt, (64, 64))
     image = Image.fromarray(gt)
     image.save(path)
-
-
-if __name__ =="__main__":
-    print(len(get_test_set()))
-
-
-if __name__ == "__main__3":
-    save_joints()
-    # split_train_test()
-    # is_train = True
-    #
-    # x, y = load_dataset(is_train)
-    #
-    # idxes = 1
-    #
-    # path = '/train/' if is_train else '/validate/'
-    # lines = {}
-    # os.makedirs('dataset/mpii/{0}/input'.format(path), exist_ok=True)
-    # os.makedirs('dataset/mpii/{0}/heatmap'.format(path), exist_ok=True)
-    # os.makedirs('dataset/mpii/{0}/center_limb'.format(path), exist_ok=True)
-    #
-    # for image_path, person in tqdm.tqdm(zip(x, y)):
-    #     image = Image.open(image_path)
-    #     file_name = image_path.split('/')[-1].split('.')[0]+"n"
-    #
-    #     confidences = [np.zeros((64,64))for i in range(17)]
-    #     limbs = [np.zeros((64,64))for i in range(16)]
-    #
-    #     for points in person:
-    #         width, height = image.size
-    #
-    #         points[:, 0] = points[:, 0] * 64 // width
-    #         points[:, 1] = points[:, 1] * 64 // height
-    #         limb_idx = 0
-    #         radius = 1.5
-    #         limb_radius = 3
-    #
-    #         for idx, point in enumerate(points):
-    #             kernel = np.reshape(create_kernel(base_shape, (point[0], point[1]), radius=radius), (64,64))
-    #             confidences[idx] = np.maximum(confidences[idx], kernel)
-    #             limbs[limb_idx] = np.maximum(limbs[limb_idx], np.reshape(draw_limb(idx,points, limb_radius), (64,64)))
-    #             limb_idx = limb_idx + 1
-    #
-    #         kernel = np.reshape(create_kernel(base_shape, center_point(points), radius=radius), (64, 64))
-    #         confidences[-1] = np.maximum(confidences[-1], kernel)
-    #
-    #     # lines[idxes] = np.asarray(person).tolist()
-    #
-    #     image = image.resize((256,256))
-    #     image.save('dataset/mpii/{1}/input/{0}.png'.format(file_name, path))
-    #     save_images(confidences, limbs, file_name, is_train)
-    #     save_image_total(limbs, file_name, is_train)
-    #     idxes = image_path.split('/')[-1].split('.')[0]+"1"
-    #     # idxes[-1] = "1"
-    #
-    #     image = np.array(image)
-    #     image = cv2.flip(image, 1)
-    #     image = Image.fromarray(image)
-    #     image.save('dataset/mpii/{1}/input/{0}.png'.format(idxes, path))
-    #
-    #     confidences, limbs = flop_image(confidences, limbs)
-    #     save_images(confidences, limbs, idxes, is_train)
-    #     save_image_total(limbs,idxes, is_train)
-    #     # idxes = idxes + 1
-    #
-    #
-    #     # os.makedirs('dataset/mpii/center_limb/{0}'.format(idxes*2), exist_ok=True)
-    #     # for idx in range(len(confidences)):
-    #     #     confidence = np.asarray(confidences[idx]*255, dtype=np.uint8)
-    #     #     confidence = np.reshape(confidence, (64,64))
-    #     #     image = Image.fromarray(confidence)
-    #     #     image.save('dataset/mpii/heatmap/{0}/{1}.png'.format(idx, idxes*2))
-    #     #
-    #     #     limb = np.asarray(limbs[idx] * 255, dtype=np.uint8)
-    #     #     limb = np.reshape(limb, (64, 64))
-    #     #
-    #     #     image = Image.fromarray(limb)
-    #     #     image.save('dataset/mpii/center_limb/{0}/{1}.png'.format(idx, idxes*2))
-    #     #
-    #     # os.makedirs('dataset/mpii/center_limb/{0}'.format(idxes*2+1), exist_ok=True)
-    #     # for idx in range(len(confidences)):
-    #     #     confidence = np.asarray(confidences[idx] * 255, dtype=np.uint8)
-    #     #     confidence = np.reshape(confidence, (64, 64))
-    #     #     image = Image.fromarray(confidence)
-    #     #     image.save('dataset/mpii/heatmap/{0}/{1}.png'.format(idx, idxes*2))
-    #     #
-    #     #     limb = np.asarray(limbs[idx] * 255, dtype=np.uint8)
-    #     #     limb = np.reshape(limb, (64, 64))
-    #     #
-    #     #     image = Image.fromarray(limb)
-    #     #     image.save('dataset/mpii/center_limb/{0}/{1}.png'.format(idx, idxes))
-    #
-    # save_mpii_joints(lines)
-    # input()
