@@ -422,8 +422,8 @@ def data_generator(batch_size, shuffle=True, is_train=True):
         limbs = []
 
         for b_i in range(batch_size):
-            file_name = dirs[idx*batch_size + b_i].split('.')[0]
-            img = Image.open(base_path+'\\input\\'+file_name+".png")
+            file_name = dirs[idx*batch_size + b_i]
+            img = Image.open(base_path+'\\image\\'+file_name)
             if img.mode == 'L':
                 continue
             # print(img.mode, file_name)
@@ -432,21 +432,21 @@ def data_generator(batch_size, shuffle=True, is_train=True):
             img = np.moveaxis(img, 2, 0)
             x.append(img)
 
-            heat_map_file_path = base_path + heat_map_path + '\\{}\\'.format(0) + file_name + ".png"
+            heat_map_file_path = base_path + heat_map_path + '\\{}\\'.format(0) + file_name
             base_heat = np.asarray(Image.open(heat_map_file_path)) / 255.
             base_heat = np.reshape(base_heat, (64,64,1))
 
             for h in range(1, heat_map_len):
-                heat_map_file_path = base_path+heat_map_path+'\\{}\\'.format(h)+file_name+".png"
+                heat_map_file_path = base_path+heat_map_path+'\\{}\\'.format(h)+file_name
                 heat = np.asarray(Image.open(heat_map_file_path))/255.
                 heat = np.reshape(heat, (64,64,1))
                 base_heat = np.concatenate([base_heat, heat], axis=-1)
 
-            limb_map_file_path = base_path + limb_path + '\\{}\\'.format(0) + file_name + ".png"
+            limb_map_file_path = base_path + limb_path + '\\{}\\'.format(0) + file_name
             base_limb = np.asarray(Image.open(limb_map_file_path)) / 255.
             base_limb = np.reshape(base_limb, (64,64,1))
             for l in range(1, limb_len):
-                limb_map_file_path = base_path+limb_path+'\\{}\\'.format(l)+file_name+".png"
+                limb_map_file_path = base_path+limb_path+'\\{}\\'.format(l)+file_name
                 limb = np.asarray(Image.open(limb_map_file_path))/255.
                 limb = np.reshape(limb, (64,64,1))
                 base_limb = np.concatenate([base_limb, limb], axis=-1)
