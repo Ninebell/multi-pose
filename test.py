@@ -36,9 +36,7 @@ def calc_energy(center, points, limb):
             base = np.zeros((64,64))
             base = Image.fromarray(base)
             base_draw = ImageDraw.Draw(base)
-            base_draw.line((ct_point[0],ct_point[1], g_point[0],g_point[1]), fill=255, width=1)
-
-            # base.show()
+            base_draw.line((ct_point[0],ct_point[1], g_point[0],g_point[1]), fill=255, width=4)
             base = np.array(base)/255
             value = np.sum(base * limb) / np.sum(base)
 

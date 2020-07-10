@@ -424,6 +424,7 @@ def data_generator(batch_size, shuffle=True, is_train=True):
     for idx in range(batch_iter):
         # print(idx)
         x = []
+        org_img = []
         heat_maps = []
         limbs = []
 
@@ -434,6 +435,7 @@ def data_generator(batch_size, shuffle=True, is_train=True):
                 continue
             # print(img.mode, file_name)
             img = img.resize((256,256))
+            org_img.append(img)
             # img.show()
             img = np.asarray(img)/255.
             img = (img - mean)/std
@@ -467,7 +469,7 @@ def data_generator(batch_size, shuffle=True, is_train=True):
         x = np.asarray(x)
         heat_maps = np.asarray(heat_maps)
         limbs = np.asarray(limbs)
-        yield x, heat_maps, limbs
+        yield x, heat_maps, limbs, org_img
 
 
 def save_limb(values, path):
