@@ -8,8 +8,11 @@ import numpy as np
 import math
 import cv2
 
+from test import make_pair, result_draw
+
 import matplotlib.pyplot as plt
 
+from PIL import Image
 
 from PIL import Image, ImageDraw
 import random
@@ -424,17 +427,37 @@ def for_filter(batch_size, data_list, image_path):
             base.save(p2+file_name)
 
 
-def get_joints_from_heat_map(heat_maps, limb_maps):
+def get_joints_from_heat_map(heat_maps):
     max_pool = torch.nn.MaxPool2d((3,3),stride=1,padding=1)
     max_values = max_pool(heat_maps)
-    batch_size = max_values.shape[0]
-    ones = torch.ones(max_values.shape)
-    zeros = torch.zeros(max_values.shape)
-    expect_points = torch.where(heat_maps == max_values)
-    # expect_points = expect_points.view([1, 17, -1])
-    indexes = torch.argmax(expect_points, dim=2)
-    print(indexes.shape)
-    print(indexes.numpy())
+    zeros = torch.zeros(max_values.shape).cuda()
+    expect_points = torch.where(heat_maps == max_values, heat_maps, zeros)
+    points=[[] for _ in range(17)]
+    with torch.no_grad():
+        expected = expect_points.cpu().numpy()
+        for j in range(17):
+            for r in range(max_values.shape[-2]):
+                for c in range(max_values.shape[-1]):
+                    if expected[j,r,c] >= 0.5:
+                        points[j].append((c,r))
+
+    return points
+
+
+def validate_image(heat_map, limb_map, org):
+    # org = np.asarray(org)
+    points = get_joints_from_heat_map(heat_map)
+
+    limb_map = limb_map.cpu().numpy()
+    center_idx = make_pair(points[-1], points[:-1], limb_map)
+    print(center_idx)
+    result = result_draw(points[-1], points[:-1], center_idx)
+    temp = Image.fromarray(result).convert('RGBA')
+    input_img = org.convert('RGBA')
+    blended = Image.blend(input_img, temp, 0.5)
+    cv2.imshow("blended", np.array(blended))
+    cv2.waitKey()
+    plt.show()
 
 
 def point_rescale(points, data):
