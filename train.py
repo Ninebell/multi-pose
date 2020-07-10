@@ -84,7 +84,7 @@ def test_model(net, limit, path, is_cuda=True):
             if True:
                 if idx > limit:
                     break
-                x, heat, limb = value
+                x, heat, limb, org = value
                 temp = np.moveaxis(x[0], 0, 2)
                 temp = np.array(temp*255, dtype=np.uint8)
                 img = PIL.Image.fromarray(temp)
@@ -135,15 +135,16 @@ def _main(epoches, batch_size, repeat, n_layer, save_root_path, pretrain):
     sch = torch.optim.lr_scheduler.StepLR(optim, 50)
 
     for epoch in range(1, epoches):
-        epoch_loss, iter_count = train_model(net, optim, criterion, batch_size)
-        epoch_loss /= iter_count
-        # sch.step()
-        print('\n', epoch, epoch_loss, '\n')
+        epoch_loss = 10
+        # epoch_loss, iter_count = train_model(net, optim, criterion, batch_size)
+        # epoch_loss /= iter_count
+        # # sch.step()
+        # print('\n', epoch, epoch_loss, '\n')
         save_path = '{0}\\{1}_{2:4d}\\'.format(save_root_path, epoch, int(epoch_loss*100))
-        os.makedirs(save_path, exist_ok=True)
-        torch.save(net.state_dict(), '{0}\\model.dict'.format(save_path))
-        if min_loss is None or min_loss > epoch_loss:
-            min_loss = epoch_loss
+        # os.makedirs(save_path, exist_ok=True)
+        # torch.save(net.state_dict(), '{0}\\model.dict'.format(save_path))
+        # if min_loss is None or min_loss > epoch_loss:
+        #     min_loss = epoch_loss
         test_model(net, 50, save_path)
 
 
@@ -155,7 +156,7 @@ def get_arguments():
     parser.add_argument('--save', '-s', nargs='+', help='save path', default=[data_set_path], dest='save_path')
     parser.add_argument('--epoch', '-e', nargs='+', help='  epoch count', default=[200], dest='epoch', type=int)
     parser.add_argument('--batch', '-b', nargs='+', help='batch size', default=[10], dest='batch_size', type=int)
-    parser.add_argument('--pretrain', '-p', nargs='+', help='pretrain model', default=[None], dest='pretrain')
+    parser.add_argument('--pretrain', '-p', nargs='+', help='pretrain model', default=['model.dict'], dest='pretrain')
 
     repeat = parser.parse_args().repeat
     n_stack = parser.parse_args().n_stack
