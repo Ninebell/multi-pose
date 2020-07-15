@@ -312,7 +312,7 @@ def make_limb_map(base, joints):
 
         limb_img = Image.fromarray(new_limb)
         imd = ImageDraw.Draw(limb_img)
-        imd.line([joint[0], joint[1], center_point[0], center_point[1]], fill=255, width=1)
+        imd.line([joint[0], joint[1], center_point[0], center_point[1]], fill=255, width=2)
         new_limb = np.array(limb_img)
         new_limb = new_limb/np.max(new_limb)
 
@@ -406,6 +406,8 @@ def save_label(data_list, save_path, filter_names):
             img = Image.fromarray(base_i)
             img.save(save_path+'/limb/{0}/{1}'.format(e, data['file_name']))
 
+        base = image_list_blend(img, base)
+
 
 def for_filter(batch_size, data_list, image_path):
     iter_len = len(data_list) // batch_size
@@ -445,7 +447,6 @@ def get_joints_from_heat_map(heat_maps):
 
 
 def validate_image(heat_map, limb_map, org):
-    # org = np.asarray(org)
     points = get_joints_from_heat_map(heat_map)
 
     limb_map = limb_map.cpu().numpy()
@@ -457,7 +458,6 @@ def validate_image(heat_map, limb_map, org):
     blended = Image.blend(input_img, temp, 0.5)
     cv2.imshow("blended", np.array(blended))
     cv2.waitKey()
-    plt.show()
 
 
 def point_rescale(points, data):
@@ -550,9 +550,9 @@ def read_groups(fp):
 
 
 def train_data_create(mpii_dict, groups):
-    base = 'E:\\dataset\\mpii\\images'
-    base = 'E:\\dataset\\mpii\\mpii_human_pose_v1\\images'
-    save_base = 'E:\\dataset\\custom_mpii_2\\'
+    base = 'D:\\dataset\\mpii\\images'
+    # base = 'D:\\dataset\\mpii\\mpii_human_pose_v1\\images'
+    save_base = 'D:\\dataset\\custom_mpii_4\\'
 
     image_size = 64
 
@@ -568,7 +568,7 @@ def train_data_create(mpii_dict, groups):
         group = groups[i].replace(';',',').split(',')
         file_name = mpii['file_name']
         anno = mpii['anno']
-        min_x, max_x, min_y, max_y = 20000, 20000, 0, 0
+        min_x, max_x, min_y, max_y = 20000, 0, 20000, 0
         mean_scale = 0
         for g in group:
             obj_pos = anno[g]['obj_pos']
@@ -583,7 +583,7 @@ def train_data_create(mpii_dict, groups):
             mean_scale += anno[g]['scale']
 
         mean_scale = mean_scale/len(group) if len(group) else 0
-        img = Image.open('{0}/{1}'.format(base,file_name))
+        img = Image.open('{0}/{1}'.format(base, file_name))
         # crop_img, loc = ImageCrop(img, [min_x,min_y,max_x,max_y],mean_scale)
 
         crop_img, loc = ImageCrop(img.copy(), (min_x, min_y, max_x, max_y), mean_scale)
@@ -600,13 +600,13 @@ def train_data_create(mpii_dict, groups):
             heat_base = make_heat_map(heat_base, new_joint)
             limb_base = make_limb_map(limb_base, new_joint)
 
-        for e in range(17):
-            base_i = np.array(heat_base[e, :, :]*255, dtype=np.uint8)
-            img = Image.fromarray(base_i)
-            img.save(save_base+'/train/heat/{0}/{1}'.format(e, file_name))
-            for r in range(1, 4):
-                r_img = img.rotate(90*r)
-                r_img.save(save_base+'/train/heat/{0}/r_{1}_{2}'.format(e, r, file_name))
+        # for e in range(17):
+        #     base_i = np.array(heat_base[e, :, :]*255, dtype=np.uint8)
+        #     img = Image.fromarray(base_i)
+        #     img.save(save_base+'/train/heat/{0}/{1}'.format(e, file_name))
+        #     for r in range(1, 4):
+        #         r_img = img.rotate(90*r)
+        #         r_img.save(save_base+'/train/heat/{0}/r_{1}_{2}'.format(e, r, file_name))
 
         for e in range(16):
             base_i = np.array(limb_base[e, :, :]*255, dtype=np.uint8)
@@ -616,11 +616,20 @@ def train_data_create(mpii_dict, groups):
                 r_img = img.rotate(90*r)
                 r_img.save(save_base+'/train/limb/{0}/r_{1}_{2}'.format(e, r, file_name))
 
-        crop_img.save(save_base+'/train/image/{0}'.format(file_name))
+        # base_t = np.zeros((64, 64))
+        # for i in range(17):
+        #     temp = Image.open(save_base+'\\train\\heat\\{0}\\'.format(i) + file_name)
+        #     base_t = np.maximum(base_t, temp)
+        # for i in range(16):
+        #     temp = Image.open(save_base+'\\train\\limb\\{0}\\'.format(i) + file_name)
+        #     base_t = np.maximum(base_t, temp)
+        # crop_img.save(save_base+'/train/image/{0}'.format(file_name))
 
-        for r in range(1, 4):
-            r_img = crop_img.rotate(90 * r)
-            r_img.save(save_base + '/train/image/r_{1}_{2}'.format(e, r, file_name))
+        # image_list_blend(crop_img, base_t)
+
+        # for r in range(1, 4):
+        #     r_img = crop_img.rotate(90 * r)
+        #     r_img.save(save_base + '/train/image/r_{1}_{2}'.format(e, r, file_name))
 
 
 if __name__ == "__main__":
