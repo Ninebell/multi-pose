@@ -205,14 +205,14 @@ def train_main(epoches, batch_size, repeat, n_layer, save_root_path, pretrain_pa
 def get_arguments():
     data_set_path = "D:\\dataset\\{0}\\result".format(conf.data_set_name)
     parser = argparse.ArgumentParser()
-    parser.add_argument('--repeat', '-r', nargs='+', help='hourglass count', default=[3], dest='repeat', type=int)
+    parser.add_argument('--repeat', '-r', nargs='+', help='hourglass count', default=[2], dest='repeat', type=int)
     parser.add_argument('--nstack', '-n', nargs='+', help='hourglass layer count', default=[4], dest='n_stack', type=int)
     parser.add_argument('--save', '-s', nargs='+', help='save path', default=[data_set_path], dest='save_path')
     parser.add_argument('--epoch', '-e', nargs='+', help='  epoch count', default=[200], dest='epoch', type=int)
     parser.add_argument('--batch', '-b', nargs='+', help='batch size', default=[10], dest='batch_size', type=int)
-    parser.add_argument('--pretrain', '-p', nargs='+', help='pretrain model', default=['D:\\dataset\\custom_mpii_3\\result_3_4\\100_ 150'], dest='pretrain')
+    parser.add_argument('--pretrain', '-p', nargs='+', help='pretrain model', default=[None], dest='pretrain')
     parser.add_argument(
-        '--test', default=True, action="store_true",
+        '--test', default=False, action="store_true",
         help='test'
     )
     repeat = parser.parse_args().repeat
@@ -251,5 +251,5 @@ if __name__ == "__main__":
         test_main(pretrain, save_path)
 
     else:
-        train_main(epoch, batch_size, repeat, n_stack, save_path, pretrain, is_test)
+        train_main(epoch, batch_size, repeat, n_stack, save_path, pretrain)
 

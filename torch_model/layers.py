@@ -3,6 +3,16 @@ import torch.nn.functional as F
 import torch
 
 
+activation_layer = {
+    'sigmoid': nn.Sigmoid(),
+    'tanh': nn.Tanh(),
+    'relu': nn.ReLU(),
+    'selu': nn.SELU(),
+    'softmax': nn.Softmax(),
+    'leaky_relu': nn.LeakyReLU()
+}
+
+
 class BatchConv2D(nn.Module):
     def __init__(self, in_ch, out_ch, kernel_size, stride, padding, activation):
         super(BatchConv2D, self).__init__()
@@ -76,7 +86,7 @@ class AttentionBlock(nn.Module):
 
 
 class BottleNeckBlock(nn.Module):
-    def __init__(self, input_feature, output_feature, attention=False, ratio=16, activation=torch.selu):
+    def __init__(self, input_feature, output_feature, attention=True, ratio=16, activation=torch.selu):
         super(BottleNeckBlock, self).__init__()
         self.input_feature = input_feature
         self.output_feature = output_feature

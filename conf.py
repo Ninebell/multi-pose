@@ -1,22 +1,22 @@
 import os
 from scipy.io import loadmat
 
-data_set_name = 'mpii'
+data_set_name = 'custom_mpii_4'
 
-root_path = 'E:\\dataset\\{0}'.format(data_set_name)
+root_path = 'D:\\dataset\\{0}'.format(data_set_name)
 train_path = "\\train\\"
 validate_path = "\\validate\\"
 
-heat_map_path = "\\heatmap_\\"
-limb_path = "\\limb_\\"
+heat_map_path = "\\heat\\"
+limb_path = "\\limb\\"
 #
 # train_annotation_path = '\\annotations\\person_keypoints_train2017.json'
 # val_annotation_path = '\\annotations\\person_keypoints_val2017.json'
 
 
 def get_train_data_num():
-    base_path = root_path+train_path
-    dirs = os.listdir(base_path+'input')
+    base_path = root_path+ train_path + heat_map_path + '0'
+    dirs = os.listdir(base_path)
     return len(dirs)
 
 
