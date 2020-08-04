@@ -29,16 +29,24 @@ def calc_dist(pt1, pt2):
 def calc_energy(center, points, limb):
 
     energy = []
-
+    print(len(points), len(center))
     for g_point in points:
         pair = []
         for idx, ct_point in enumerate(center):
             base = np.zeros((64,64))
             base = Image.fromarray(base)
             base_draw = ImageDraw.Draw(base)
-            base_draw.line((ct_point[0],ct_point[1], g_point[0],g_point[1]), fill=255, width=4)
+            base_draw.line((ct_point[0],ct_point[1], g_point[0],g_point[1]), fill=255, width=3)
+            plt.subplot(221)
+            plt.imshow(base)
+            plt.subplot(222)
+            plt.imshow(limb)
             base = np.array(base)/255
-            value = np.sum(base * limb) / np.sum(base)
+            prop = np.sum(base*limb)
+            # value = np.mean(base*limb)
+            value = prop / np.sum(base)
+            print(value)
+            # plt.show()
 
             pair.append((idx, value))
         energy.append(pair)
@@ -50,9 +58,7 @@ def find_max(energy, used, idx, value, history):
         if find_max.max_value < value:
             find_max.max_value = value
             find_max.history = history.copy()
-
     else:
-
         for i in range(len(energy[idx])):
             if not used[i]:
                 used[i] = True

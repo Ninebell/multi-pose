@@ -1,9 +1,15 @@
-from torch_model.layers import BottleNeckBlock, Hourglass, BatchConv2D
+from torch_model.layers import BottleNeckBlock, Hourglass, BatchConv2D, activation_layer
 import torch
+import json
 import torch.nn as nn
 
 
 class CenterNet(nn.Module):
+
+    def __init__(self, pre_train_path, state_dict):
+        super(CenterNet, self).__init__()
+        self.load_model(pre_train_path, state_dict)
+        self.__build__()
 
     def __init__(self, feature, out_channel, out_activation, n_layer=5, n_stack=2):
         super(CenterNet, self).__init__()
@@ -11,8 +17,33 @@ class CenterNet(nn.Module):
         self.n_layer = n_layer
         self.n_stack = n_stack
         self.out_ch = out_channel
-        self.out_activation = out_activation
+        self.out_act_str = out_activation
+        self.out_activation = [activation_layer[name] for name in self.out_act_str]
         self.__build__()
+
+    def save_meta_data(self, save_path):
+        meta = {'feature': self.feature,
+                'out_channel': self.out_ch,
+                'out_activation': self.out_act_str,
+                'n_layer': self.n_layer,
+                'n_stack': self.n_stack}
+        state_dict = self.state_dict()
+
+        meta = json.dumps(meta)
+        fp = open(save_path+'\\meta.ini', 'w')
+        fp.write(meta)
+        fp.close()
+
+        torch.save(state_dict, '{0}\\model.dict'.format(save_path))
+
+    def load_model(self, meta, state_dict):
+        self.feature = meta['feature']
+        self.out_ch = meta['out_channel']
+        self.out_act_str = meta['out_activation']
+        self.out_activation = [activation_layer[name] for name in self.out_act_str]
+        self.n_layer = meta['n_layer']
+        self.n_stack = meta['n_stack']
+        self.load_state_dict(torch.load(state_dict))
 
     def __build__(self):
         feature = self.feature

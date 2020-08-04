@@ -11,7 +11,7 @@ def focal_loss(output, target, alpha=2, beta=4):
 
     N = torch.sum(torch.where(target == 1, target, zeros))
 
-    epsilon = 1e-10
+    epsilon = 1e-8
 
     ones_board = torch.pow(1-ones_board, alpha) * torch.log(ones_board+epsilon)
 

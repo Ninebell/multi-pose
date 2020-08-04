@@ -486,7 +486,7 @@ def save_limb(values, path):
 def save_heatmap(values, path):
     gt = values[:,:,0]
     for k in range(1, 17):
-        gt = np.maximum(np.reshape(values[ :, :, k], (64, 64)), gt)
+        gt = np.maximum(np.reshape(values[:, :, k], (64, 64)), gt)
     gt = decode(gt)
     # gt = np.asarray(((gt+1) * 125.), dtype=np.uint8)
     gt = np.reshape(gt, (64, 64))

@@ -3,7 +3,7 @@ from scipy.io import loadmat
 
 data_set_name = 'custom_mpii_2'
 
-root_path = 'E:\\dataset\\{0}'.format(data_set_name)
+root_path = 'D:\\dataset\\{0}'.format(data_set_name)
 train_path = "\\train\\"
 validate_path = "\\validate\\"
 
