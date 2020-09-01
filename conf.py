@@ -1,7 +1,7 @@
 import os
 from scipy.io import loadmat
 
-data_set_name = 'custom_mpii_4'
+data_set_name = 'skeleton'
 
 root_path = 'D:\\dataset\\{0}'.format(data_set_name)
 train_path = "\\train\\"
