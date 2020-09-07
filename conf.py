@@ -1,7 +1,7 @@
 import os
 from scipy.io import loadmat
 
-data_set_name = 'skeleton'
+data_set_name = 'custom_mpii_2'
 
 root_path = 'D:\\dataset\\{0}'.format(data_set_name)
 train_path = "\\train\\"
@@ -15,8 +15,8 @@ limb_path = "\\limb\\"
 
 
 def get_train_data_num():
-    base_path = root_path+ train_path + heat_map_path + '0'
-    dirs = os.listdir(base_path)
+    base_path = root_path+train_path
+    dirs = os.listdir(base_path+'image')
     return len(dirs)
 
 
