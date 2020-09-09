@@ -4,8 +4,101 @@ import os
 from PIL import Image, ImageDraw
 import math
 import numpy as np
+
 import matplotlib.pyplot as plt
 import json
+
+
+def get_joint_from_heatmap(heatmap):
+    joints = []
+    for r in range(1,63):
+        for c in range(1,63):
+            if np.max(heatmap[r-1:r+2,c-1:c+2]) == heatmap[r,c] and heatmap[r,c]>0.5:
+                joints.append([c,r])
+    return joints
+
+
+def make_pair(joints, centers):
+    pairs = []
+    for center in centers:
+        for joint in joints:
+            pairs.append([joint, center])
+    return pairs
+
+
+def calc_energy(pt, center, limb):
+    pt = np.asarray(pt)
+    center = np.asarray(center)
+    gt = draw_limb(pt, center, 64)
+    distance = point_distance(pt, center)
+    limb_show = limb_to_show(limb)
+    # plt.subplot(1,2,1)
+    # plt.imshow(limb_show)
+    #
+    # plt.subplot(1,2,2)
+    # plt.imshow(limb_to_show(gt))
+    # plt.show()
+
+    energy = np.sum(limb * gt)
+    return energy/distance
+
+
+def find_max_energy(energy, idx, max_idx_list):
+    max_idx = np.argmax(energy[idx])
+    if energy[idx][max_idx] == 0:
+        max_idx_list[idx]=-1
+        return
+    is_duplicate = np.min(np.abs(max_idx_list - max_idx)) == 0
+    if is_duplicate:
+        for i, ot_idx in enumerate(max_idx_list):
+            if ot_idx == max_idx:
+                if energy[i][ot_idx] >= energy[idx][max_idx]:
+                    energy[idx][max_idx]=0
+                    find_max_energy(energy, idx, max_idx_list)
+                else:
+                    energy[i][ot_idx]=0
+                    max_idx_list[i]=-1
+                    find_max_energy(energy, i, max_idx_list)
+    else:
+        max_idx_list[idx] = max_idx
+
+    return
+
+
+def find_max_energy_sum(energy):
+    max_idx_list = np.zeros((energy.shape[0],), dtype=np.int) - 1
+    for idx in range(energy.shape[0]):
+        find_max_energy(energy, idx, max_idx_list)
+    return max_idx_list
+
+
+def grouping_joints(joint, center, limb):
+    pairs = make_pair(joint, center)
+    point_count = len(joint)
+    center_count = len(center)
+
+    energy = []
+    for pair in pairs:
+        energy.append(calc_energy(pair[0], pair[1], limb))
+
+    if len(energy) == 0:
+        return np.zeros((center_count,)) - 1
+
+    energy = np.reshape(np.array(energy), (center_count, -1))
+    return find_max_energy_sum(energy)
+
+
+def inference_joints(heatmaps, limbs):
+    joints_list = [[] for _ in range(15)]
+    for idx, heatmap in enumerate(heatmaps):
+        joints = get_joint_from_heatmap(heatmap)
+        joints_list[idx] = joints
+
+    max_pair = [[] for _ in range(15)]
+    for idx, joints in enumerate(joints_list[:-1]):
+        max_pair[idx] = grouping_joints(joints, joints_list[-1], limbs[idx*2:idx*2+2])
+
+    return max_pair, joints_list
 
 
 def point_distance(pt1, pt2):
@@ -124,28 +217,64 @@ def create_multi_rect(info, singles, flag, using_single=False):
     return mpii_infos
 
 
+def pair_joint_to_person(pair, joint, meta, crop_size):
+    center_count = len(joint[-1])
+    joint_dict = [{} for _ in range (center_count)]
+
+    shape = 64
+    crop_size = list(map(int, crop_size.split(',')))
+    scale = np.asarray([crop_size[2] - crop_size[0], crop_size[3] - crop_size[1]])/np.array([shape, shape])
+
+    for i in range(15):
+        for j, idxes in enumerate(pair[i]):
+            if idxes == -1:
+                joint_dict[j][i] = None
+            else:
+                joint_dict[j][i] = np.asarray(joint[i][idxes] * scale, dtype=int) + np.asarray([crop_size[0],crop_size[1]], dtype=int)
+
+
 def mpii_list_to_hdf5(filename, mpii_list, is_train, data_root):
     i = 0
-    with h5py.File(filename, 'w') as hf:
+    with h5py.File(filename.format(data_root), 'w') as hf:
         x_g = hf.create_group('x')
         h_g = hf.create_group('joint')
+        c_g = hf.create_group('crop')
         l_g = hf.create_group('limb')
+        m_g = hf.create_group('meta')
         for mpii_infos in mpii_list:
             for infos in mpii_infos:
                 if not os.path.exists(data_root+'\\images\\{}'.format(infos.name)):
                     print('passed {}'.format(infos.name))
                     continue
+                str_json = np.string_(infos.toJSON())
 
-                crop_image, image_size = image_crop(infos, data_root+'\\images')
-                points = filter_not_used(infos, image_size)
-                print(len(points))
+                crop_image, crop_size = image_crop(infos, data_root+'\\images')
+                print(crop_size)
+                points = filter_not_used(infos, crop_size)
+
                 if len(points) == 0:
                     continue
-                points = convert_points(points, image_size)
-                heatmap = points_to_heatmap(points, image_size)
-                limb = points_to_limb(points, image_size)
-                str_json = np.string_(infos.toJSON())
-                x_g.attrs['meta']=str_json
+                points = convert_points(points, crop_size)
+                heatmap = points_to_heatmap(points, crop_size)
+                limb = points_to_limb(points, crop_size)
+
+                # max_pair, predicted_joints = inference_joints(heatmap, limb)
+                # print(len(max_pair), len(max_pair[0]))
+                # print(str(crop_size))
+                # pair_joint_to_person(max_pair, predicted_joints, str_json, '{},{},{},{}'.format(crop_size[0],crop_size[1],crop_size[2],crop_size[3]))
+
+                print(crop_image.shape)
+                x_g.attrs['meta'] = str_json
+                # x_g.attrs['crop'] = '{},{},{},{}'.format(crop_size[0],crop_size[1],crop_size[2],crop_size[3])
+                c_g.create_dataset(
+                    name='C_'+str(i),
+                    data=crop_size,
+                )
+                m_g.create_dataset(
+                    name='M_'+str(i),
+                    data=str_json
+                )
+
                 x_g.create_dataset(
                     name='X_'+str(i),
                     data=crop_image,
@@ -172,19 +301,25 @@ def mpii_list_to_hdf5(filename, mpii_list, is_train, data_root):
                         compression_opts=9
                     )
 
-                if is_train:
-                    heat_blend = image_list_blend(crop_image, heatmap)
-                    limb_show = []
-                    for j in range(14):
-                        limb_show.append(limb_to_show(limb[j*2:j*2+2, :, :]))
-                    limb_blend = image_list_blend(crop_image, limb_show)
-                    plt.subplot(1,2,1)
-                    plt.imshow(heat_blend)
-                    plt.subplot(1,2,2)
-                    plt.imshow(limb_blend)
-                    plt.savefig(data_root+'\\image_test\\{}.png'.format(i))
-                    # plt.show()
-                    plt.close()
+                # if is_train:
+                #     heat_blend = image_list_blend(crop_image, heatmap)
+                #     limb_show = []
+                #     base = np.zeros((64,64))
+                #     for j in range(14):
+                #
+                #         te = limb_to_show(limb[j*2:j*2+2, :, :])
+                #         limb_show.append(te)
+                #         # plt.imshow(te)
+                #         # plt.show()
+                #         # plt.close()
+                #     limb_blend = image_list_blend(base, limb_show)
+                #     plt.subplot(1,2,1)
+                #     plt.imshow(heat_blend)
+                #     plt.subplot(1,2,2)
+                #     plt.imshow(limb_blend)
+                #     # plt.savefig(data_root+'\\image_test\\{}.png'.format(i))
+                #     plt.show()
+                #     plt.close()
                 print(i)
                 i = i + 1
 
@@ -201,10 +336,10 @@ def image_crop(mpii_info, root):
     image_path = '{}\\{}'.format(root, mpii_info.name)
     image = Image.open(image_path)
     image_array = np.asarray(image)
+
     mean_scale = mpii_info.mean_scale
     rects = mpii_info.rects
     if len(rects) == 0:
-        min_size = min(image_array.shape[0], image_array.shape[1])
         return image_array, (0, 0, 64, 64)
 
     objpos = np.reshape(np.array(rects[0].objpos), (1,2))
@@ -236,6 +371,7 @@ def filter_not_used(mpii, crop_size):
             if pt_key == 6 or pt_key == 7:
                 continue
             pt_key = pt_key if pt_key < 6 else pt_key-2
+
             temp = np.array([int(pt[0]), int(pt[1])])
             if not(crop_size[0] < temp[0] < crop_size[2] and crop_size[1] < temp[1] < crop_size[3]):
                 continue
@@ -325,6 +461,7 @@ def limb_to_show(limb_map):
     plain = plain*90
     test = (test*180+plain)/360
     test[0,0]=1
+
     # plt.imshow(test, cmap='inferno')
     # plt.show()
     return test
@@ -332,7 +469,7 @@ def limb_to_show(limb_map):
 
 def draw_limb(pt, center_pt, shape):
     pt_distance = point_distance(pt, center_pt)
-    distance_vector = (pt - center_pt) / pt_distance if pt_distance!= 0 else np.asarray([0,0])
+    distance_vector = (pt - center_pt) / pt_distance if pt_distance != 0 else np.asarray([0,0])
 
     base = np.zeros((shape, shape, 3), dtype=np.uint8)
     img = Image.fromarray(base)
@@ -340,8 +477,6 @@ def draw_limb(pt, center_pt, shape):
     draw_img.line([center_pt[0], center_pt[1], pt[0], pt[1]], fill='white', width=1)
     img = img.convert('L')
     img = np.asarray(img)/255
-    # plt.imshow(img)
-    # plt.show()
     img = np.where(img > 0.5, 1, 0)
     base = np.asarray([np.asarray(img), np.asarray(img)])
     base = np.transpose(base, (1,2,0))
@@ -356,11 +491,11 @@ def limb_merge(limb_list):
     limb_list = np.reshape(np.asarray(limb_list), (-1, 2, 64, 64))
     divider = np.where(limb_list != 0, 1, 0)
     divider = divider.sum(axis=0)
-    count = np.where(divider[0,:,:] == 0, 1, divider[0,:,:])
+    divider = np.where(divider[0,:,:] == 0, 1, divider[0,:,:])
 
-    count = np.squeeze(count)
+    # count = np.squeeze(count)
     limb_sum = limb_list.sum(axis=0)
-    distance_limb = limb_sum/count
+    distance_limb = limb_sum/divider
     return distance_limb
 
 
@@ -382,6 +517,7 @@ def points_to_limb(points_list, crop_size):
             temp_limb[pt_key].append(limb)
 
     limb = limb_merge(temp_limb[0])
+
     for i in range(1,14):
         temp = limb_merge(temp_limb[i])
         limb = np.concatenate((limb,temp), axis=0)
@@ -403,38 +539,50 @@ def image_list_blend(org, img_list):
     org = org.convert("RGBA")
     blended = Image.blend(org, temp, 0.45)
     return blended
-    # plt.imshow(blended)
-    # plt.show()
 
 
 if __name__ == "__main__":
-    data_set_root = 'D:\\dataset\\mpii'
+    data_set_root = 'E:\\dataset\\mpii'
     mat = loadmat('{}\\mpii_human_pose_v1_u12_1.mat'.format(data_set_root))
     release = mat['RELEASE']
     anno_list = release['annolist'][0, 0][0]
     img_train = release['img_train'][0, 0][0]
     single_person = release['single_person'][0, 0]
 
+
     idx = 0
 
     test_infos = []
     train_infos = []
     for flag, anno, single in zip(img_train, anno_list, single_person):
+        rects = create_multi_rect(anno, single, flag)
         if flag:
-            rects = create_multi_rect(anno, single, flag)
             if rects is None:
                 continue
             else:
                 train_infos.append(rects)
         else:
             # continue
-            rects = create_multi_rect(anno, single, flag)
             if rects is None:
                 continue
             else:
                 test_infos.append(rects)
 
-    os.makedirs('{}\\info', exist_ok=True)
-    mpii_list_to_hdf5('{}\\info\\train_info.h5', train_infos, True, data_set_root)
+    print("H")
+    os.makedirs('{}\\info'.format(data_set_root), exist_ok=True)
+    mpii_list_to_hdf5('{}\\info\\1train_info.h5', train_infos, True, data_set_root)
     mpii_list_to_hdf5('{}\\info\\test_info.h5', test_infos, False, data_set_root)
 
+
+if __name__ == "__main__1":
+    data_set_root = 'E:\\dataset\\mpii'
+    train_h5 = h5py.File('{}\\info\\train_info.h5'.format(data_set_root), 'r')
+    xs = train_h5['x']
+    joints = train_h5['joint']
+    limbs = train_h5['limb']
+    crop = train_h5['crop']
+    test = xs['X_0']
+    print(test)
+    test = crop['C_7']
+    print(test[0], test[1], test[2], test[3])
+    print(tuple(test))
