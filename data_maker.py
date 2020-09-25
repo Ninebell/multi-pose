@@ -7,6 +7,9 @@ import numpy as np
 
 import matplotlib.pyplot as plt
 import json
+import random
+
+import torch
 
 
 def get_joint_from_heatmap(heatmap):
@@ -40,6 +43,8 @@ def calc_energy(pt, center, limb):
     # plt.show()
 
     energy = np.sum(limb * gt)
+    if distance == 0:
+        distance = 1
     return energy/distance
 
 
@@ -89,10 +94,18 @@ def grouping_joints(joint, center, limb):
 
 
 def inference_joints(heatmaps, limbs):
+
     joints_list = [[] for _ in range(15)]
+
     for idx, heatmap in enumerate(heatmaps):
         joints = get_joint_from_heatmap(heatmap)
         joints_list[idx] = joints
+
+    count = 0
+    for i in range(len(joints_list)):
+        count = count + len(joints_list[i])
+
+    print(count)
 
     max_pair = [[] for _ in range(15)]
     for idx, joints in enumerate(joints_list[:-1]):
@@ -217,7 +230,7 @@ def create_multi_rect(info, singles, flag, using_single=False):
     return mpii_infos
 
 
-def pair_joint_to_person(pair, joint, meta, crop_size):
+def pair_joint_to_person(pair, joint, crop_size):
     center_count = len(joint[-1])
     joint_dict = [{} for _ in range (center_count)]
 
@@ -230,26 +243,27 @@ def pair_joint_to_person(pair, joint, meta, crop_size):
             if idxes == -1:
                 joint_dict[j][i] = None
             else:
-                joint_dict[j][i] = np.asarray(joint[i][idxes] * scale, dtype=int) + np.asarray([crop_size[0],crop_size[1]], dtype=int)
+                joint_dict[j][i] = np.asarray(joint[i][idxes] * scale, dtype=int)
+    return joint_dict
 
 
-def mpii_list_to_hdf5(filename, mpii_list, is_train, data_root):
+def mpii_list_to_hdf5(filename, mpii_list, is_train, data_root, indexes):
     i = 0
-    with h5py.File(filename.format(data_root), 'w') as hf:
+    with h5py.File(filename.format(data_root)+'.h5', 'w') as hf:
         x_g = hf.create_group('x')
         h_g = hf.create_group('joint')
         c_g = hf.create_group('crop')
         l_g = hf.create_group('limb')
-        m_g = hf.create_group('meta')
-        for mpii_infos in mpii_list:
+        meta = {}
+        for index in indexes:
+            mpii_infos = mpii_list[index]
             for infos in mpii_infos:
                 if not os.path.exists(data_root+'\\images\\{}'.format(infos.name)):
                     print('passed {}'.format(infos.name))
                     continue
-                str_json = np.string_(infos.toJSON())
+                str_json = infos.toJSON()
 
                 crop_image, crop_size = image_crop(infos, data_root+'\\images')
-                print(crop_size)
                 points = filter_not_used(infos, crop_size)
 
                 if len(points) == 0:
@@ -263,23 +277,17 @@ def mpii_list_to_hdf5(filename, mpii_list, is_train, data_root):
                 # print(str(crop_size))
                 # pair_joint_to_person(max_pair, predicted_joints, str_json, '{},{},{},{}'.format(crop_size[0],crop_size[1],crop_size[2],crop_size[3]))
 
-                print(crop_image.shape)
-                x_g.attrs['meta'] = str_json
+                meta[i] = str_json
+                # x_g.attrs['meta'] = str_json
                 # x_g.attrs['crop'] = '{},{},{},{}'.format(crop_size[0],crop_size[1],crop_size[2],crop_size[3])
                 c_g.create_dataset(
                     name='C_'+str(i),
                     data=crop_size,
                 )
-                m_g.create_dataset(
-                    name='M_'+str(i),
-                    data=str_json
-                )
 
                 x_g.create_dataset(
                     name='X_'+str(i),
                     data=crop_image,
-                    # shape=(256,256,3),
-                    # maxshape=(256,256,3),
                     compression='gzip',
                     compression_opts=9
                 )
@@ -320,8 +328,17 @@ def mpii_list_to_hdf5(filename, mpii_list, is_train, data_root):
                 #     # plt.savefig(data_root+'\\image_test\\{}.png'.format(i))
                 #     plt.show()
                 #     plt.close()
-                print(i)
                 i = i + 1
+    file_path = '{}.json'.format(filename.format(data_root))
+    # if is_train:
+    #     file_path = file_path.format(data_root, 'train_meta')
+    # else:
+    #     file_path = file_path.format(data_root, 'test_meta')
+
+    print(filename, len(meta))
+
+    with open(file_path, 'w') as json_file:
+        json.dump(meta, json_file)
 
 
 def get_box(center, size, limit):
@@ -405,7 +422,7 @@ def convert_points(points_list, crop_size):
     return croped_points_list
 
 
-def create_kernel(shape, point, radius=5):
+def create_kernel(shape, point, radius=3):
     base = np.zeros(shape)
 
     x = int(point[0])
@@ -541,14 +558,12 @@ def image_list_blend(org, img_list):
     return blended
 
 
-if __name__ == "__main__":
-    data_set_root = 'E:\\dataset\\mpii'
+def data_make(data_set_root='D:\\dataset\\mpii'):
     mat = loadmat('{}\\mpii_human_pose_v1_u12_1.mat'.format(data_set_root))
     release = mat['RELEASE']
     anno_list = release['annolist'][0, 0][0]
     img_train = release['img_train'][0, 0][0]
     single_person = release['single_person'][0, 0]
-
 
     idx = 0
 
@@ -568,21 +583,118 @@ if __name__ == "__main__":
             else:
                 test_infos.append(rects)
 
-    print("H")
     os.makedirs('{}\\info'.format(data_set_root), exist_ok=True)
-    mpii_list_to_hdf5('{}\\info\\1train_info.h5', train_infos, True, data_set_root)
-    mpii_list_to_hdf5('{}\\info\\test_info.h5', test_infos, False, data_set_root)
+    indexes = np.arange(len(train_infos))
+    random.shuffle(indexes)
+    mpii_list_to_hdf5('{}\\info\\train_info', train_infos, True, data_set_root, indexes[:len(indexes)//10*8])
+    mpii_list_to_hdf5('{}\\info\\validate_info', train_infos, True, data_set_root, indexes[len(indexes)//10*8:])
+
+    indexes = np.arange(len(test_infos))
+    mpii_list_to_hdf5('{}\\info\\test_info', test_infos, False, data_set_root, indexes)
 
 
-if __name__ == "__main__1":
-    data_set_root = 'E:\\dataset\\mpii'
-    train_h5 = h5py.File('{}\\info\\train_info.h5'.format(data_set_root), 'r')
-    xs = train_h5['x']
-    joints = train_h5['joint']
-    limbs = train_h5['limb']
-    crop = train_h5['crop']
-    test = xs['X_0']
-    print(test)
-    test = crop['C_7']
-    print(test[0], test[1], test[2], test[3])
-    print(tuple(test))
+def data_generator_from_hdf(conf):
+    hdf = conf['hdf']
+    batch_size = conf['batch']
+    x_g = hdf['x']
+    h_g = hdf['joint']
+    c_g = hdf['crop']
+    l_g = hdf['limb']
+    iter_len = len(hdf['x'])
+    index = np.arange(iter_len)
+    batch_iter = iter_len//batch_size
+    if conf['shuffle']:
+        random.shuffle(index)
+    for batch_count in range(batch_iter):
+        x = []
+        h = []
+        l = []
+        c = []
+        for b_i in range(batch_size):
+            i = b_i + batch_count * batch_size
+            image = x_g['X_{}'.format(index[i])]
+            crop = c_g['C_{}'.format(index[i])]
+            image = np.asarray(image)
+            image = Image.fromarray(image)
+            image = np.asarray(image.resize((256, 256)))
+            image = image/255
+            image = np.transpose(image, (2, 0, 1))
+            x.append(image)
+            c.append(crop)
+            if conf['is_train']:
+                heat = h_g['H_{}'.format(index[i])]
+                limb = l_g['L_{}'.format(index[i])]
+                h.append(heat)
+                l.append(limb)
+        x = np.asarray(x)
+        c = np.asarray(c)
+        if conf['is_train']:
+            h = np.asarray(h)
+            l = np.asarray(l)
+        if conf['is_tensor']:
+            x = torch.from_numpy(x).type(torch.FloatTensor)
+            c = torch.from_numpy(c).type(torch.FloatTensor)
+            if conf['is_train']:
+                h = torch.from_numpy(h).type(torch.FloatTensor)
+                l = torch.from_numpy(l).type(torch.FloatTensor)
+            if conf['is_cuda']:
+                x = x.cuda()
+                c = c.cuda()
+                if conf['is_train']:
+                    h = h.cuda()
+                    l = l.cuda()
+        if conf['is_train']:
+            yield x, (h, l, c)
+        else:
+            yield x, c
+
+
+if __name__ == "__main__":
+    test = {1:2, 2:3,3:4}
+    print(len(test))
+    make_data = True
+    data_set_root = 'D:\\dataset\\mpii'
+    if make_data:
+        data_make(data_set_root)
+    else:
+        train_h5 = h5py.File('{}\\info\\test_info.h5'.format(data_set_root), 'r')
+        conf={'hdf': train_h5, 'batch': 1, 'is_train': False, 'is_tensor': False}
+
+        for x, y in data_generator_from_hdf(conf):
+            x = np.squeeze(x)
+            image = np.transpose(x, (1, 2, 0))
+            image = np.asarray(image*255, np.uint8)
+            heatmap, limb, crop_size = y[0][0], y[1][0], y[2][0]
+            max_pair, predicted_joints = inference_joints(heatmap, limb)
+            joints_list = pair_joint_to_person(max_pair, predicted_joints, '{},{},{},{}'.format(crop_size[0],crop_size[1],crop_size[2],crop_size[3]))
+            base = np.zeros((crop_size[3]-crop_size[1], crop_size[2]-crop_size[0]), dtype=np.uint8)
+            base = Image.fromarray(base)
+            base_draw = ImageDraw.ImageDraw(base)
+
+            for joints in joints_list:
+                for joint in joints:
+                    joint = joints[joint]
+                    if joint is None:
+                        continue
+                    base_draw.ellipse((joint[0]-10,joint[1]-10,joint[0]+10,joint[1]+10), fill='white')
+            base = base/np.max(base)
+            plt.subplot(2,4,1)
+            plt.imshow(image)
+            plt.subplot(2,4,2)
+            plt.imshow(image_list_blend(image, [base]))
+            plt.subplot(2,4,3)
+            plt.imshow(image_list_blend(image, heatmap[:-1]))
+            plt.subplot(2,4,7)
+            base_heat = heatmap[0]
+            for h in range(15):
+                base_heat = np.maximum(base_heat, heatmap[h])
+            plt.imshow(base_heat)
+            plt.subplot(2,4,6)
+            plt.imshow(base)
+            plt.subplot(2,4,8)
+            base_limb = limb_to_show(limb[0:2])
+            for h in range(1, 14):
+                base_limb = np.maximum(base_limb, limb_to_show(limb[h*2:h*2+2]))
+            plt.imshow(base_limb)
+
+            plt.show()

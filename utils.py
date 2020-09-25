@@ -409,12 +409,13 @@ def flop_points(points):
 
 def data_generator(batch_size, shuffle=True, is_train=True):
     base_path = root_path+train_path if is_train else root_path+validate_path
-    dirs = os.listdir(base_path+heat_map_path+'0')
+    dirs = os.listdir(base_path+'\\image\\')
+    # +'0')
     if shuffle:
         random.shuffle(dirs)
     batch_iter = len(dirs)//batch_size
-    heat_map_len = len(os.listdir(base_path + heat_map_path))
-    limb_len = len(os.listdir(base_path + limb_path))
+    # heat_map_len = len(os.listdir(base_path + heat_map_path))
+    # limb_len = len(os.listdir(base_path + limb_path))
     mean = np.array([0.485, 0.456, 0.406])
     mean = np.array([np.ones((256, 256)) * m for m in mean])
     std = np.array([0.229, 0.224, 0.225])
@@ -442,6 +443,8 @@ def data_generator(batch_size, shuffle=True, is_train=True):
             img = np.moveaxis(img, 2, 0)
             x.append(img)
 
+            if not os.path.exists(base_path+heat_map_path):
+                continue
             heat_map_file_path = base_path + heat_map_path + '\\{}\\'.format(0) + file_name
             base_heat = np.asarray(Image.open(heat_map_file_path)) / 255.
             base_heat = np.reshape(base_heat, (64,64,1))

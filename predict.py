@@ -1,63 +1,65 @@
-from keras.utils import plot_model
-from keras.optimizers import RMSprop
-from models import MultiPose, data_generator, save_heatmap
 import numpy as np
-from keras.layers import MaxPooling2D
+import os
+import argparse
+import numpy as np
 
 
-def find_max_points(heat_map, ch):
-    heat_map = heat_map[:,:,ch]
-    # kernel = np.ones((3, 3), dtype=np.float) * 1/9.
-    points=[]
-    for r in range(1, heat_map.shape[0]-1):
-        for c in range(1, heat_map.shape[1]-1):
-            m_v = heat_map[r-1:r+2, c-1:c+2].max()
-            v = heat_map[r,c]
-            if v == m_v and v > 0.0:
-                points.append((r,c))
 
-    print(ch, len(points))
-    # np.max()
-    # t = heat_map[1:4,1:4] * kernel
+def GetF1score(y, y_pred, target):
+    tp = 0
+    fp = 0
+    fn = 0
+    for i, y_hat in enumerate(y_pred):
+        if (y[i] == target) and (y_hat == target):
+            tp += 1
+        if (y[i] == target) and (y_hat != target):
+            fn += 1
+        if (y[i] != target) and (y_hat == target):
+            fp += 1
+    print(target, tp, fp, fn)
+    f1s = tp / ( tp + (fp + fn)/2 )
+    return f1s
+
+def CategoricalF1Score(outfilepath, num_classes):
+    res_arr = np.loadtxt(outfilepath, dtype='str')
+    y, y_pred = [], []
+    for i, res in enumerate(res_arr):
+        r1, r2, r3, r4 = res.split(',')
+        y.append(r3)
+        y_pred.append(r4)
+    F1scores = []
+    for t in range(num_classes):
+        F1scores.append(GetF1score(y, y_pred, str(t)))
+    return F1scores
 
 
-    # equal_map = np.equal(t, heat_map)
-    # return t
+if __name__ == '__main__':
+    args = argparse.ArgumentParser()
+    args.add_argument('--prediction', type=str, default='pred.txt')
+    args.add_argument('--test_label_path', type=str, default='pred.txt')
+    config = args.parse_args()
+    outfilepath = config.prediction
+    num_classes = 4
 
-
+    F1scores = CategoricalF1Score(outfilepath, num_classes)
+    SCORE = 0
+    for i, s in enumerate(F1scores):
+        SCORE += (i + 1) * s / 10
+    SCORE = round(SCORE, 10)
+    print(SCORE)
 
 if __name__ == "__main__":
-    ones = np.ones((15, 2))
-    test = np.zeros((15, 2))
-    for i in range(15):
-        for j in range(2):
-            test[i,j] = ((i+j) % 10+1)
-            print(i,j,(i+1)% 10 + 1)
-    print(test)
-    eq = np.equal(ones, test)
-    print(np.sum(eq))
-
-
-if __name__ == "__main__2":
-
-    length = 22420
-    t = MultiPose(input_shape=(256, 256, 3), hournum=2)
-    plot_model(t.model, to_file='model.png')
-    optimzer = RMSprop(lr=2.5e-4)
-    t.compile(optimizer=optimzer, loss='mse', metrics=['mae'])
-    t.model.load_weights('dataset/mpii/result_paper/116/model.h5')
-
-    for idx, value in enumerate(data_generator(50, 1, 1, shuffle=False)):
-        save_heatmap(value[1][0][0], 'dataset/mpii/result_paper/{0}/heatmap_gt_{1}.png'.format(117, idx))
-
-        result = t.model.predict(value[0])
-        heatmaps = result[2]
-        for i in range(17):
-            find_max_points(value[1][0][0], i)
-        limbs = result[3]
-        # save_heatmap(result[0][0], 'dataset/mpii/result_paper/{0}/base_heatmap_{1}.png'.format(epoch, idx))
-        # save_limb(result[1][0], 'dataset/mpii/result_paper/{0}/base_limb{1}.png'.format(epoch, idx))
-        #
-        save_heatmap(result[2][0], 'dataset/mpii/result_paper/{0}/heatmap_{1}.png'.format(117, idx))
-        # save_limb(result[3][0], 'dataset/mpii/result_paper/{0}/limb_{1}.png'.format(epoch, idx))
-
+    pred = np.array([0, 1, 0 , 3, 3, 2, 1, 0], dtype=np.uint)
+    pred = np.reshape(pred, (pred.shape[0],1))
+    gt = np.array([0, 1, 0 , 3, 3, 2, 1, 0], dtype=np.uint)
+    gt = np.reshape(gt, (gt.shape[0],1))
+    zeros = np.zeros((pred.shape[0], 1), dtype=np.uint)
+    total = np.concatenate([zeros, zeros, pred, gt], axis=1)
+    total = total.tolist()
+    print(total)
+    # print(total.shape)
+    fp = open('pred.txt', 'w')
+    for data in total:
+        fp.write('{},{},{},{}\n'.format(data[0],data[1],data[2],data[3]))
+    # np.savetxt('pred.txt', total)
+    fp.close()
