@@ -6,11 +6,6 @@ import torch.nn as nn
 
 class CenterNetPose(nn.Module):
 
-    # def __init__(self, pre_train_path, state_dict):
-    #     super(CenterNetPose, self).__init__()
-    #     self.load_model(pre_train_path, state_dict)
-    #     self.__build__()
-
     def __init__(self, feature, out_channel, out_activation, n_layer=5, n_stack=2):
         super(CenterNetPose, self).__init__()
         self.feature = feature

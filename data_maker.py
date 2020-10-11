@@ -2,6 +2,7 @@ from scipy.io import loadmat
 import h5py
 import os
 from PIL import Image, ImageDraw
+from torch.utils.data import Dataset
 import math
 import numpy as np
 
@@ -12,11 +13,49 @@ import random
 import torch
 
 
+class MPiiDataset(Dataset):
+    def __init__(self, hdf, is_train, transform=None):
+        self.is_train = is_train
+        self.x_g = hdf['x']
+        self.h_g = hdf['joint']
+        self.c_g = hdf['crop']
+        self.l_g = hdf['limb']
+        self.transform=transform
+
+    def __len__(self):
+        return len(self.x_g)
+
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+        image = np.array(self.x_g['X_{}'.format(idx)])
+        crop = np.array(self.c_g['C_{}'.format(idx)])
+        image = np.asarray(image)
+        image = Image.fromarray(image)
+        image = np.asarray(image.resize((256, 256)))
+        image = image / 255
+        image = np.transpose(image, (2, 0, 1))
+        if self.is_train:
+            heat = np.array(self.h_g['H_{}'.format(idx)])
+            limb = np.array(self.l_g['L_{}'.format(idx)])
+
+            if self.transform:
+                image = self.transform(image)
+                heat = self.transform(heat)
+                limb = self.transform(limb)
+        else:
+            heat = None
+            limb = None
+            if self.transform:
+                image = self.transform(image)
+
+        return image, (heat, limb, crop)
+
 def get_joint_from_heatmap(heatmap):
     joints = []
     for r in range(1,63):
         for c in range(1,63):
-            if np.max(heatmap[r-1:r+2,c-1:c+2]) == heatmap[r,c] and heatmap[r,c]>0.5:
+            if np.max(heatmap[r-1:r+2,c-1:c+2]) == heatmap[r,c] and heatmap[r,c]>0.4:
                 joints.append([c,r])
     return joints
 
@@ -34,13 +73,6 @@ def calc_energy(pt, center, limb):
     center = np.asarray(center)
     gt = draw_limb(pt, center, 64)
     distance = point_distance(pt, center)
-    limb_show = limb_to_show(limb)
-    # plt.subplot(1,2,1)
-    # plt.imshow(limb_show)
-    #
-    # plt.subplot(1,2,2)
-    # plt.imshow(limb_to_show(gt))
-    # plt.show()
 
     energy = np.sum(limb * gt)
     if distance == 0:
@@ -187,7 +219,6 @@ def create_multi_rect(info, singles, flag, using_single=False):
     if len(info['annorect']) == 0:
         return [MpiiStruct(name, [])]
 
-
     rects = info['annorect'][0]
 
     try:
@@ -235,8 +266,8 @@ def pair_joint_to_person(pair, joint, crop_size):
     joint_dict = [{} for _ in range (center_count)]
 
     shape = 64
-    crop_size = list(map(int, crop_size.split(',')))
-    scale = np.asarray([crop_size[2] - crop_size[0], crop_size[3] - crop_size[1]])/np.array([shape, shape])
+    crop_size = list(map(float, crop_size.split(',')))
+    scale = np.asarray([int(crop_size[2] - crop_size[0]), int(crop_size[3] - crop_size[1])])/np.array([shape, shape])
 
     for i in range(15):
         for j, idxes in enumerate(pair[i]):
@@ -272,14 +303,8 @@ def mpii_list_to_hdf5(filename, mpii_list, is_train, data_root, indexes):
                 heatmap = points_to_heatmap(points, crop_size)
                 limb = points_to_limb(points, crop_size)
 
-                # max_pair, predicted_joints = inference_joints(heatmap, limb)
-                # print(len(max_pair), len(max_pair[0]))
-                # print(str(crop_size))
-                # pair_joint_to_person(max_pair, predicted_joints, str_json, '{},{},{},{}'.format(crop_size[0],crop_size[1],crop_size[2],crop_size[3]))
 
                 meta[i] = str_json
-                # x_g.attrs['meta'] = str_json
-                # x_g.attrs['crop'] = '{},{},{},{}'.format(crop_size[0],crop_size[1],crop_size[2],crop_size[3])
                 c_g.create_dataset(
                     name='C_'+str(i),
                     data=crop_size,
@@ -309,31 +334,8 @@ def mpii_list_to_hdf5(filename, mpii_list, is_train, data_root, indexes):
                         compression_opts=9
                     )
 
-                # if is_train:
-                #     heat_blend = image_list_blend(crop_image, heatmap)
-                #     limb_show = []
-                #     base = np.zeros((64,64))
-                #     for j in range(14):
-                #
-                #         te = limb_to_show(limb[j*2:j*2+2, :, :])
-                #         limb_show.append(te)
-                #         # plt.imshow(te)
-                #         # plt.show()
-                #         # plt.close()
-                #     limb_blend = image_list_blend(base, limb_show)
-                #     plt.subplot(1,2,1)
-                #     plt.imshow(heat_blend)
-                #     plt.subplot(1,2,2)
-                #     plt.imshow(limb_blend)
-                #     # plt.savefig(data_root+'\\image_test\\{}.png'.format(i))
-                #     plt.show()
-                #     plt.close()
                 i = i + 1
     file_path = '{}.json'.format(filename.format(data_root))
-    # if is_train:
-    #     file_path = file_path.format(data_root, 'train_meta')
-    # else:
-    #     file_path = file_path.format(data_root, 'test_meta')
 
     print(filename, len(meta))
 
