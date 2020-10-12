@@ -53,8 +53,8 @@ def limb_loss(target_x, target_y, predict_x, predict_y):
 
 def hr_net_loss(target, predict):
     joint_target = target[0]
-    limb_x_target = target[1,0:28:2]
-    limb_y_target = target[1,1:28:2]
+    limb_x_target = target[1][:, 0:28:2]
+    limb_y_target = target[1][:, 1:28:2]
 
     joint_predict = predict[:,:15]
     limb_x_predict = predict[:,15:43:2]
@@ -66,7 +66,10 @@ def hr_net_loss(target, predict):
 def center_net_loss(target, predict):
     total_loss = 0
     for i in range(len(predict)):
-        total_loss = total_loss + hr_net_loss(target, predict[i])
+        joint = joint_loss(target[0], predict[i][0])
+        limb = limb_loss(target[1][:,0:28:2], target[1][:,1:28:2], predict[i][1][:,0:28:2], predict[i][1][:,1:28:2])
+        total_loss = total_loss + joint + limb
+        # total_loss = total_loss + hr_net_loss(target, predict[i])
     return total_loss
 
 
