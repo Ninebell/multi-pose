@@ -27,23 +27,58 @@ import tqdm
 root_path = 'E:\\dataset\\mpii\\model'
 
 
+def mask(target):
+    zeros = torch.zeros(target.shape).cuda()
+    return torch.where(target != zeros, 1 - zeros, zeros)
+
+
+def l2_loss(target, predict):
+    return torch.pow(target - predict, 2)
+
+
+def joint_loss(target, predict):
+    joint_mask = mask(target)
+    return (joint_mask*l2_loss(target, predict)).sum()
+
+
+def limb_loss(target_x, target_y, predict_x, predict_y):
+    limb_x_mask = mask(target_x)
+    limb_y_mask = mask(target_y)
+    limb_mask = limb_x_mask + limb_y_mask - limb_x_mask*limb_y_mask
+
+    limb_x_loss = l2_loss(target_x, predict_x)
+    limb_y_loss = l2_loss(target_y, predict_y)
+    return (limb_mask*(limb_x_loss+limb_y_loss)).sum()
+
+
 def hr_net_loss(target, predict):
-    # depth_loss_joint = pixel_logistic_focal_loss(target[0], predict[0])
-    depth_loss_joint = torch.pow(target[0]-predict[:, :15], 2).sum()
-    depth_loss_limb = torch.pow(target[1]-predict[:, 15:], 2).sum()
+    joint_target = target[0]
+    limb_x_target = target[1,0:28:2]
+    limb_y_target = target[1,1:28:2]
 
-    return depth_loss_joint + depth_loss_limb
+    joint_predict = predict[:,:15]
+    limb_x_predict = predict[:,15:43:2]
+    limb_y_predict = predict[:,16:43:2]
+
+    return joint_loss(joint_target, joint_predict)+limb_loss(limb_x_target,limb_y_target, limb_x_predict, limb_y_predict)
 
 
-def custom_loss(target, predict):
-    depth_loss_joint = 0
-    depth_loss_limb = 0
+def center_net_loss(target, predict):
+    total_loss = 0
     for i in range(len(predict)):
-        depth_loss_joint += pixel_logistic_focal_loss(target[0], predict[i][0])
-        depth_loss_limb += torch.sqrt(torch.mean(torch.pow(target[1]-predict[i][1], 2)))
+        total_loss = total_loss + hr_net_loss(target, predict[i])
+    return total_loss
 
-    return (depth_loss_joint/len(predict) + depth_loss_limb/len(predict))/2
 
+# def custom_loss(target, predict):
+#     depth_loss_joint = 0
+#     depth_loss_limb = 0
+#     for i in range(len(predict)):
+#         depth_loss_joint += pixel_logistic_focal_loss(target[0], predict[i][0])
+#         depth_loss_limb += torch.sqrt(torch.mean(torch.pow(target[1]-predict[i][1], 2)))
+#
+#     return (depth_loss_joint/len(predict) + depth_loss_limb/len(predict))/2
+#
 
 def check_point(model, train_info):
     if train_info.validate_loss < train_info.min_validate_loss:
@@ -120,7 +155,7 @@ if __name__ == "__main__":
     scheduler = lr_scheduler.ExponentialLR(optim, gamma=exp)
 
     if is_train:
-        train_model(50, net, custom_loss, optim,
+        train_model(50, net, center_net_loss, optim,
                 {
                     'loader': data_generator_from_hdf,
                     'conf': {
