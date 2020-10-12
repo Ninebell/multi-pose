@@ -24,7 +24,7 @@ from CenterNetPose import CenterNetPose
 from data_maker import data_generator_from_hdf, inference_joints, pair_joint_to_person, image_list_blend, MPiiDataset
 import tqdm
 
-root_path = 'D:\\dataset\\mpii\\model'
+root_path = 'E:\\dataset\\mpii\\model'
 
 
 def hr_net_loss(target, predict):
@@ -99,28 +99,28 @@ def test_model(net, model_path, save_path, data_loader_conf):
 
 
 if __name__ == "__main__":
-    net = CenterNetPose(128, [15, 28], ['sigmoid', 'tanh'], n_layer=4, n_stack=4)
+    net = CenterNetPose(256, [15, 28], ['sigmoid', 'tanh'], n_layer=4, n_stack=5)
     # net = HRNet(192, 11, 3, [15, 28], ['sigmoid', 'tanh'], 'relu')
     # net = HRNet(feature=256, depth=7, input_ch=6, output_ch=[15,28], out_act=['sigmoid', 'sigmoid'], act='selu').cuda()
     net.cuda()
 
-    data_set_root = 'D:\\dataset\\mpii'
+    data_set_root = 'E:\\dataset\\mpii'
     save_path = '{}\\result'.format(data_set_root)
     os.makedirs(save_path, exist_ok=True)
     lr = 1e-4
     exp = 0.99
     optim = torch.optim.Adam(params=net.parameters(), lr=lr, weight_decay=0.1)
 
-    batch_size = 8
+    batch_size = 4
     train_hdf5 = h5py.File('{}\\info\\train_info.h5'.format(data_set_root), 'r')
     validate_hdf5 = h5py.File('{}\\info\\validate_info.h5'.format(data_set_root), 'r')
     test_hdf5 = h5py.File('{}\\info\\test_info.h5'.format(data_set_root), 'r')
 
-    is_train = False
+    is_train = True
     scheduler = lr_scheduler.ExponentialLR(optim, gamma=exp)
 
     if is_train:
-        train_model(50, net, hr_net_loss, optim,
+        train_model(50, net, custom_loss, optim,
                 {
                     'loader': data_generator_from_hdf,
                     'conf': {
@@ -142,7 +142,7 @@ if __name__ == "__main__":
                         'is_cuda': True}
                 },
                 scheduler,
-                save_path, 'adam_{}_exp_{}'.format(lr,exp), check_point,
+                save_path, 'center_256_4_5_adam_{}_exp_{}'.format(lr,exp), check_point,
             )
     else:
         test_model(net, 'model.dict', save_path,
